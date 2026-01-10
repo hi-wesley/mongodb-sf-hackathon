@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, CheckCircle2, AlertCircle, Loader2, User, Globe, FileText, Send } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, Loader2, User, Globe, FileText, Send, Trash2 } from 'lucide-react';
 
 // Types
 interface Step {
@@ -18,6 +18,7 @@ interface Workflow {
   _id: string;
   goal: string;
   status: string;
+  context?: Record<string, any>;
   steps?: Step[];
 }
 
@@ -50,6 +51,7 @@ function App() {
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   const focusStepRef = useRef<HTMLDivElement | null>(null);
 
@@ -102,9 +104,27 @@ function App() {
     }
   };
 
+  const handleClearMissions = async () => {
+    if (isClearing) return;
+    const ok = window.confirm('Clear all recent missions? This will delete workflows and steps from the database.');
+    if (!ok) return;
+    setIsClearing(true);
+    try {
+      await axios.delete(`${API_URL}/workflows`);
+      setWorkflows([]);
+      setActiveId(null);
+      setActiveWorkflow(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   // Derived active agent
   const steps = activeWorkflow?.steps ?? [];
   const now = Date.now();
+  const tripContext = (activeWorkflow?.context ?? {}) as any;
 
   const runningStep = useMemo(() => steps.find(s => s.status === 'RUNNING'), [steps]);
   const nextPendingStep = useMemo(() => {
@@ -159,6 +179,23 @@ function App() {
         </div>
 
         <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3 tracking-wider">Recent Missions</h3>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-gray-600">Manage</span>
+          <button
+            type="button"
+            onClick={handleClearMissions}
+            disabled={isClearing || workflows.length === 0}
+            className="text-xs px-2 py-1 rounded-md border border-gray-800 bg-black/30 hover:bg-gray-900 text-gray-400 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+            title="Clear missions"
+          >
+            {isClearing ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Trash2 className="w-3 h-3" />
+            )}
+            Clear
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto space-y-2">
           {workflows.map(wf => (
             <button
@@ -272,6 +309,136 @@ function App() {
                   <FileText className="w-4 h-4" /> Mission Control: {activeWorkflow.goal}
                 </h2>
 
+                {/* Trip Summary (user-facing results) */}
+                {(tripContext.dates ||
+                  tripContext.flights ||
+                  tripContext.hotels ||
+                  tripContext.transport ||
+                  tripContext.budget ||
+                  tripContext.activities ||
+                  tripContext.itineraryMarkdown) && (
+                  <div className="mb-6 space-y-3">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trip Summary</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {tripContext.dates?.type === 'dates' && (
+                        <div className="bg-black/40 border border-gray-800 rounded-xl p-4">
+                          <div className="text-xs text-gray-400 mb-1">Selected Dates</div>
+                          <div className="text-white font-semibold">{tripContext.dates.recommendation}</div>
+                          {(tripContext.dates.startISO || tripContext.dates.endISO) && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {tripContext.dates.startISO ? new Date(tripContext.dates.startISO).toLocaleDateString() : '—'}
+                              {' → '}
+                              {tripContext.dates.endISO ? new Date(tripContext.dates.endISO).toLocaleDateString() : '—'}
+                            </div>
+                          )}
+                          {tripContext.dates.reason && <div className="text-xs text-gray-500 mt-1">{tripContext.dates.reason}</div>}
+                        </div>
+                      )}
+
+                      {tripContext.flights?.type === 'flights' && (
+                        <div className="bg-black/40 border border-gray-800 rounded-xl p-4">
+                          <div className="text-xs text-gray-400 mb-2">Flights (Recommended)</div>
+                          {(() => {
+                            const idx = tripContext.flights.recommendedIndex ?? 0;
+                            const flight = tripContext.flights.options?.[idx] ?? tripContext.flights.options?.[0];
+                            if (!flight) return <div className="text-gray-500 text-sm">No flights yet.</div>;
+                            return (
+                              <div className="flex justify-between items-start gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-white font-semibold truncate">{flight.airline} {flight.flight}</div>
+                                  <div className="text-xs text-gray-500">
+                                    {flight.route ? `${flight.route} • ` : ''}{flight.time ? `${flight.time} • ` : ''}{flight.duration}
+                                  </div>
+                                </div>
+                                <div className="text-green-400 font-bold shrink-0">{flight.price}</div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {tripContext.hotels?.type === 'hotels' && (
+                        <div className="bg-black/40 border border-gray-800 rounded-xl p-4">
+                          <div className="text-xs text-gray-400 mb-2">Accommodation (Recommended)</div>
+                          {(() => {
+                            const idx = tripContext.hotels.recommendedIndex ?? 0;
+                            const hotel = tripContext.hotels.options?.[idx] ?? tripContext.hotels.options?.[0];
+                            if (!hotel) return <div className="text-gray-500 text-sm">No hotels yet.</div>;
+                            return (
+                              <div className="flex justify-between items-start gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-white font-semibold truncate">{hotel.name}</div>
+                                  <div className="text-xs text-gray-500">{hotel.area}</div>
+                                  <div className="text-xs text-gray-500">~${hotel.nightlyUsd}/night • {tripContext.hotels.nights} nights</div>
+                                </div>
+                                <div className="text-green-400 font-bold shrink-0">${hotel.totalUsd}</div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+
+                      {tripContext.transport?.type === 'transport' && (
+                        <div className="bg-black/40 border border-gray-800 rounded-xl p-4">
+                          <div className="text-xs text-gray-400 mb-2">Getting Around</div>
+                          <div className="space-y-2">
+                            {tripContext.transport.options?.slice(0, 4).map((o: any, i: number) => (
+                              <div key={i} className="flex items-start justify-between gap-3 text-sm p-2 bg-gray-800/40 rounded border border-gray-800">
+                                <div className="min-w-0">
+                                  <div className="text-white font-semibold truncate">
+                                    <span className="text-horizon-accent">{o.mode}</span>
+                                    {' • '}
+                                    {o.name}
+                                  </div>
+                                  <div className="text-xs text-gray-400">{o.details}</div>
+                                </div>
+                                {o.estimate && <div className="text-xs text-gray-500 shrink-0">{o.estimate}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {tripContext.budget?.type === 'budget' && (
+                        <div className="bg-black/40 border border-gray-800 rounded-xl p-4">
+                          <div className="text-xs text-gray-400 mb-2">Estimated Budget</div>
+                          <div className="text-green-400 font-bold text-lg">{tripContext.budget.total}</div>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                            {tripContext.budget.breakdown?.slice(0, 4).map((b: any, i: number) => (
+                              <div key={i} className="flex justify-between bg-gray-800/50 border border-gray-800 rounded-lg p-2">
+                                <span className="text-gray-300">{b.category}</span>
+                                <span className="text-white font-mono">{b.amount}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {tripContext.activities?.type === 'events' && (
+                        <div className="bg-black/40 border border-gray-800 rounded-xl p-4 md:col-span-2">
+                          <div className="text-xs text-gray-400 mb-2">Highlights</div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {tripContext.activities.items?.slice(0, 8).map((event: any, i: number) => (
+                              <div key={i} className="flex items-center gap-2 text-sm text-gray-200 bg-gray-800/30 border border-gray-800 rounded-lg p-2">
+                                <span className="text-horizon-accent">•</span>
+                                <span className="min-w-0 truncate">{event.name}</span>
+                                <span className="text-xs text-gray-500 shrink-0">{event.date}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {typeof tripContext.itineraryMarkdown === 'string' && tripContext.itineraryMarkdown.trim().length > 0 && (
+                      <div className="bg-black/40 border border-gray-800 rounded-xl p-4">
+                        <div className="text-xs text-gray-400 mb-2">Itinerary</div>
+                        <div className="space-y-2">{renderMarkdownLite(tripContext.itineraryMarkdown)}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <AnimatePresence>
                     {activeWorkflow.steps?.map((step) => {
@@ -286,6 +453,8 @@ function App() {
                         Boolean(output) &&
                         (output.type === 'weather' ||
                           output.type === 'flights' ||
+                          output.type === 'hotels' ||
+                          output.type === 'transport' ||
                           output.type === 'events' ||
                           output.type === 'dates' ||
                           output.type === 'budget' ||
@@ -376,6 +545,55 @@ function App() {
                                   </div>
                                 )}
 
+                                {output.type === 'hotels' && (
+                                  <div className="space-y-2">
+                                    {output.options?.map((hotel: any, i: number) => {
+                                      const isRecommended = i === (output.recommendedIndex ?? 0);
+                                      return (
+                                        <div
+                                          key={i}
+                                          className={`flex justify-between items-start gap-3 text-sm p-2 rounded border ${isRecommended
+                                            ? 'bg-horizon-accent/10 border-horizon-accent/30'
+                                            : 'bg-gray-800 rounded border-gray-700'
+                                            }`}
+                                        >
+                                          <div className="min-w-0">
+                                            <div className="font-bold text-white truncate">
+                                              {hotel.name}
+                                              {isRecommended && <span className="text-xs text-horizon-accent ml-2">Recommended</span>}
+                                            </div>
+                                            <div className="text-xs text-gray-400">{hotel.area}</div>
+                                            <div className="text-xs text-gray-500">~${hotel.nightlyUsd}/night • {output.nights} nights</div>
+                                          </div>
+                                          <div className="text-right shrink-0">
+                                            <div className="font-bold text-green-400">${hotel.totalUsd}</div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {output.type === 'transport' && (
+                                  <div className="space-y-2">
+                                    {output.options?.map((o: any, i: number) => (
+                                      <div key={i} className="flex items-start justify-between gap-3 text-sm p-2 bg-gray-800 rounded border border-gray-700">
+                                        <div className="min-w-0">
+                                          <div className="font-bold text-white truncate">
+                                            <span className="text-horizon-accent">{o.mode}</span>
+                                            {' • '}
+                                            {o.name}
+                                          </div>
+                                          <div className="text-xs text-gray-400">{o.details}</div>
+                                        </div>
+                                        {o.estimate && (
+                                          <div className="text-xs text-gray-500 shrink-0">{o.estimate}</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
                                 {output.type === 'events' && (
                                   <div className="space-y-1">
                                     {output.items.map((event: any, i: number) => (
@@ -391,6 +609,13 @@ function App() {
                                 {output.type === 'dates' && (
                                   <div className="text-sm p-2 bg-green-500/10 border border-green-500/30 rounded text-green-300 space-y-1">
                                     <div>📅 <strong>Recommendation:</strong> {output.recommendation}</div>
+                                    {(output.startISO || output.endISO) && (
+                                      <div className="text-xs text-green-200/80">
+                                        {output.startISO ? new Date(output.startISO).toLocaleDateString() : '—'}
+                                        {' → '}
+                                        {output.endISO ? new Date(output.endISO).toLocaleDateString() : '—'}
+                                      </div>
+                                    )}
                                     {output.reason && (
                                       <div className="text-xs text-green-200/80">{output.reason}</div>
                                     )}

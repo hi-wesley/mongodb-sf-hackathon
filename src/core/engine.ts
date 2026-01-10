@@ -235,6 +235,11 @@ export class EventHorizon {
                         file: 'final_itinerary.md'
                     };
                     await step.save();
+                    if (wf) {
+                        wf.context = { ...(wf.context ?? {}), itineraryMarkdown: content };
+                        wf.markModified('context');
+                        await wf.save();
+                    }
 
                     console.log('✅ Workflow complete. Ready for next mission.');
                     // process.exit(0); // Removed to allow continuous operation
@@ -325,12 +330,57 @@ export class EventHorizon {
     private inferDestination(goal: string): string {
         const normalized = goal.replace(/\s+/g, ' ').trim();
         const toMatch = normalized.match(/\bto\s+([^,.]+?)(?:\s+for\b|\s+in\b|\s+with\b|\s+on\b|\s*$)/i);
-        if (toMatch?.[1]) return toMatch[1].trim();
+        if (toMatch?.[1]) return this.canonicalizeDestination(toMatch[1].trim());
 
         const inMatch = normalized.match(/\bin\s+([^,.]+?)(?:\s+for\b|\s*$)/i);
-        if (inMatch?.[1]) return inMatch[1].trim();
+        if (inMatch?.[1]) return this.canonicalizeDestination(inMatch[1].trim());
 
         return 'your destination';
+    }
+
+    private canonicalizeDestination(destination: string): string {
+        const lower = destination.toLowerCase().trim();
+        const hasWord = (word: string) => new RegExp(`\\b${word}\\b`, 'i').test(lower);
+
+        if (
+            lower.includes('san francisco') ||
+            lower.includes('san fran') ||
+            lower.includes('san fransisco') ||
+            hasWord('sf') ||
+            hasWord('sfo') ||
+            lower.includes('bay area')
+        ) {
+            return 'San Francisco';
+        }
+        if (lower.includes('singapore') || hasWord('sg')) return 'Singapore';
+        if (lower.includes('new york') || hasWord('nyc') || hasWord('ny')) return 'New York';
+        if (lower.includes('tokyo')) return 'Tokyo';
+        if (lower.includes('japan')) return 'Japan';
+        if (lower.includes("xi'an") || lower.includes('xian')) return "Xi'an";
+        if (lower.includes('beijing')) return 'Beijing';
+        if (lower.includes('shanghai')) return 'Shanghai';
+        if (lower.includes('china')) return 'China';
+
+        return destination;
+    }
+
+    private inferPlaceFromStep(stepName: string, fallbackDestination: string): string {
+        const combined = `${fallbackDestination} ${stepName}`.toLowerCase();
+        const has = (phrase: string) => combined.includes(phrase);
+        const hasWord = (word: string) => new RegExp(`\\b${word}\\b`, 'i').test(combined);
+
+        if (has('san francisco') || has('san fran') || has('san fransisco') || has('bay area') || hasWord('sf') || hasWord('sfo'))
+            return 'San Francisco';
+        if (has('singapore') || hasWord('sg')) return 'Singapore';
+        if (has('new york') || has('nyc') || hasWord('ny')) return 'New York';
+        if (has('tokyo')) return 'Tokyo';
+        if (has('japan')) return 'Japan';
+        if (has("xi'an") || has('xian')) return "Xi'an";
+        if (has('beijing')) return 'Beijing';
+        if (has('shanghai')) return 'Shanghai';
+        if (has('china')) return 'China';
+
+        return this.canonicalizeDestination(fallbackDestination);
     }
 
     private extractMonthYear(goal: string): { monthIndex: number | null; year: number | null } {
@@ -453,13 +503,22 @@ export class EventHorizon {
         const toAirport =
             lower.includes('japan') || lower.includes('tokyo')
                 ? 'NRT'
-                : lower.includes('london') || lower.includes('uk') || lower.includes('england')
-                    ? 'LHR'
-                    : lower.includes('paris') || lower.includes('france')
-                        ? 'CDG'
-                        : lower.includes('new york') || lower.includes('nyc')
-                            ? 'JFK'
-                            : 'INTL';
+                : lower.includes('singapore')
+                    ? 'SIN'
+                    : lower.includes('san francisco') || /\bsf\b/.test(lower)
+                        ? 'SFO'
+                        : lower.includes('beijing')
+                            ? 'PEK'
+                            : lower.includes('shanghai')
+                                ? 'PVG'
+                                : lower.includes('london') || lower.includes('uk') || lower.includes('england')
+                                    ? 'LHR'
+                                    : lower.includes('paris') || lower.includes('france')
+                                        ? 'CDG'
+                                        : lower.includes('new york') || lower.includes('nyc')
+                                            ? 'JFK'
+                                            : 'INTL';
+        const route = `Home → ${toAirport === 'INTL' ? destination : toAirport}`;
         return {
             type: 'flights',
             options: [
@@ -467,7 +526,7 @@ export class EventHorizon {
                     airline: lower.includes('japan') ? 'ANA' : 'United',
                     flight: lower.includes('japan') ? 'NH-107' : 'UA-882',
                     time: '10:10 AM',
-                    route: `SFO → ${toAirport}`,
+                    route,
                     price: '$1,120',
                     duration: '11h 40m',
                 },
@@ -475,12 +534,121 @@ export class EventHorizon {
                     airline: lower.includes('japan') ? 'Japan Airlines' : 'Delta',
                     flight: lower.includes('japan') ? 'JL-001' : 'DL-249',
                     time: '02:35 PM',
-                    route: `SFO → ${toAirport}`,
+                    route,
                     price: '$1,060',
                     duration: '12h 05m',
                 },
             ],
             recommendedIndex: 1,
+        };
+    }
+
+    private buildHotelsOutput(destination: string, durationDays: number) {
+        const lower = destination.toLowerCase();
+        const nights = Math.max(1, durationDays - 1);
+
+        const mk = (name: string, area: string, nightlyUsd: number, notes: string) => ({
+            name,
+            area,
+            nightlyUsd,
+            totalUsd: nightlyUsd * nights,
+            notes,
+        });
+
+        let options: Array<{ name: string; area: string; nightlyUsd: number; totalUsd: number; notes: string }> = [];
+        let recommendedIndex = 0;
+
+        if (lower.includes('san francisco') || /\bsf\b/.test(lower)) {
+            options = [
+                mk('Union Square / Downtown', 'Central, great for first-timers', 285, 'Best transit access; pick a well-reviewed block.'),
+                mk('North Beach', 'Walkable, cafes + nightlife', 320, 'Easy access to Fisherman’s Wharf/Chinatown; lively evenings.'),
+                mk('Marina / Cow Hollow', 'Scenic + calmer', 310, 'Great for Golden Gate access; fewer transit lines late night.'),
+                mk('Mission / Valencia', 'Food + culture', 260, 'More local vibe; check noise levels and street safety at night.'),
+            ];
+            recommendedIndex = 0;
+        } else if (lower.includes('singapore')) {
+            options = [
+                mk('Marina Bay', 'Iconic skyline + central', 380, 'Walkable to Gardens by the Bay; pricier but convenient.'),
+                mk('Bugis', 'Great value + connected', 240, 'Near MRT lines; solid mid-range hotels.'),
+                mk('Orchard', 'Shopping + easy transit', 310, 'Good base with lots of dining and MRT access.'),
+                mk('Chinatown', 'Food + culture', 220, 'Great hawker access; check room size (often smaller).'),
+            ];
+            recommendedIndex = 1;
+        } else if (lower.includes('new york') || lower.includes('nyc')) {
+            options = [
+                mk('Midtown', 'Central + transit hub', 340, 'Best for first visit; easy subway access.'),
+                mk('Chelsea / Flatiron', 'Walkable + great food', 360, 'Close to High Line; great neighborhoods.'),
+                mk('Lower Manhattan', 'Historic + views', 330, 'Great for Brooklyn Bridge and downtown sights.'),
+                mk('Williamsburg (Brooklyn)', 'Trendy + lively', 290, 'Great vibe; quick subway to Manhattan.'),
+            ];
+            recommendedIndex = 0;
+        } else {
+            options = [
+                mk('Downtown (central)', 'Closest to top sights', 250, 'Prioritize transit access and safety.'),
+                mk('Old Town / Historic Center', 'Charming + walkable', 230, 'Great for culture and cafes.'),
+                mk('Near Main Station', 'Most convenient for transport', 210, 'Good if you plan day trips.'),
+            ];
+            recommendedIndex = 0;
+        }
+
+        return {
+            type: 'hotels',
+            destination,
+            nights,
+            options,
+            recommendedIndex,
+        };
+    }
+
+    private buildTransportOutput(destination: string, stepName: string) {
+        const lower = destination.toLowerCase();
+        const step = stepName.toLowerCase();
+
+        const mk = (mode: string, name: string, details: string, estimate?: string) => ({
+            mode,
+            name,
+            details,
+            estimate,
+        });
+
+        if (lower.includes('san francisco') || /\bsf\b/.test(lower)) {
+            const options = [
+                mk('Transit', 'Clipper Card', 'Tap-to-pay for Muni + BART + ferries. Add to Apple Wallet if supported.', '$'),
+                mk('Transit', 'Muni (bus/metro) + cable cars', 'Great for city exploration; consider a 1–3 day Muni pass.', '$'),
+                mk('Airport', 'BART from SFO', 'Fast ride to downtown; easiest transfer option.', '$'),
+                mk('Ride-share', 'Uber/Lyft', 'Best late-night or for hills; surge pricing during events.', '$$'),
+            ];
+            return { type: 'transport', destination, options };
+        }
+
+        if (lower.includes('singapore')) {
+            const options = [
+                mk('Transit', 'EZ-Link / SimplyGo', 'Use MRT + buses; easiest for most travelers.', '$'),
+                mk('Transit', 'Singapore Tourist Pass', 'Unlimited rides for short stays; compare vs pay-as-you-go.', '$'),
+                mk('Ride-share', 'Grab', 'Very reliable for quick hops and late night.', '$$'),
+                mk('Airport', 'MRT/Taxi from Changi', 'MRT is cheapest; taxi is easiest with luggage.', '$–$$'),
+            ];
+            return { type: 'transport', destination, options };
+        }
+
+        if (lower.includes('china') || lower.includes('beijing') || lower.includes('shanghai') || step.includes('intercity')) {
+            const options = [
+                mk('Transit', 'Metro + buses', 'Fast and cheap; get a transit card where available.', '$'),
+                mk('Ride-share', 'DiDi', 'Best for point-to-point and late night.', '$$'),
+                mk('Intercity', 'High-speed rail', 'Often the best Beijing ⇄ Xi’an ⇄ Shanghai option; book tickets early.', '$$'),
+                mk('Airport', 'Airport Express / taxi', 'Use express lines where available; taxi for luggage.', '$–$$'),
+            ];
+            return { type: 'transport', destination, options };
+        }
+
+        return {
+            type: 'transport',
+            destination,
+            options: [
+                mk('Transit', 'Local metro/bus', 'Buy a transit card or use contactless where supported.', '$'),
+                mk('Ride-share', 'Uber/Grab/taxi', 'Use for late nights and short hops.', '$$'),
+                mk('Walk', 'Walkable core', 'Cluster sights by neighborhood to reduce travel time.', '$'),
+            ],
         };
     }
 
@@ -498,6 +666,72 @@ export class EventHorizon {
                     { name: 'Arashiyama bamboo grove + river area', date: 'Day 7', type: 'Nature' },
                     { name: 'Nara deer park day trip', date: 'Day 8', type: 'Day Trip' },
                     { name: 'Osaka: Dotonbori + street food crawl', date: 'Day 10', type: 'Food' },
+                ],
+            };
+        }
+
+        if (lower.includes('san francisco') || /\bsf\b/.test(lower)) {
+            return {
+                type: 'events',
+                items: [
+                    { name: 'Golden Gate Bridge + Presidio viewpoints', date: 'Day 1', type: 'Landmark' },
+                    { name: 'Alcatraz (book ahead) + Fisherman’s Wharf stroll', date: 'Day 2', type: 'History' },
+                    { name: 'Ferry Building + Embarcadero + waterfront sunset', date: 'Day 3', type: 'Food' },
+                    { name: 'Mission District murals + Dolores Park picnic', date: 'Day 4', type: 'Culture' },
+                    { name: 'Lands End trail + Sutro Baths', date: 'Day 5', type: 'Nature' },
+                    { name: 'Chinatown + North Beach cafes', date: 'Day 6', type: 'Neighborhoods' },
+                    { name: 'Day trip: Muir Woods / Sausalito', date: 'Day 7', type: 'Day Trip' },
+                ],
+            };
+        }
+
+        if (lower.includes('singapore')) {
+            return {
+                type: 'events',
+                items: [
+                    { name: 'Gardens by the Bay (Supertree Grove) at night', date: 'Day 1', type: 'Iconic' },
+                    { name: 'Marina Bay promenade + skyline viewpoints', date: 'Day 2', type: 'City' },
+                    { name: 'Hawker center crawl (Maxwell / Lau Pa Sat)', date: 'Day 3', type: 'Food' },
+                    { name: 'Chinatown + Buddha Tooth Relic Temple', date: 'Day 4', type: 'Culture' },
+                    { name: 'Little India + Kampong Glam (Haji Lane)', date: 'Day 5', type: 'Neighborhoods' },
+                    { name: 'Sentosa (beach + attractions)', date: 'Day 6', type: 'Fun' },
+                    { name: 'Jewel Changi + airport transit ease', date: 'Day 7', type: 'Bonus' },
+                ],
+            };
+        }
+
+        if (lower.includes('beijing')) {
+            return {
+                type: 'events',
+                items: [
+                    { name: 'Forbidden City + Tiananmen Square', date: 'Day 1', type: 'History' },
+                    { name: 'Temple of Heaven + hutong walk', date: 'Day 2', type: 'Culture' },
+                    { name: 'Great Wall day trip (Mutianyu/Badaling)', date: 'Day 3', type: 'Day Trip' },
+                    { name: 'Summer Palace', date: 'Day 4', type: 'Nature' },
+                ],
+            };
+        }
+
+        if (lower.includes('shanghai')) {
+            return {
+                type: 'events',
+                items: [
+                    { name: 'The Bund at sunset + skyline views', date: 'Day 1', type: 'Iconic' },
+                    { name: 'Yu Garden + Old City food', date: 'Day 2', type: 'Culture' },
+                    { name: 'French Concession cafes + stroll', date: 'Day 3', type: 'Neighborhoods' },
+                    { name: 'Shanghai Museum / People’s Square', date: 'Day 4', type: 'Culture' },
+                ],
+            };
+        }
+
+        if (lower.includes('china')) {
+            return {
+                type: 'events',
+                items: [
+                    { name: 'Beijing: Forbidden City + Great Wall day trip', date: 'Days 1–3', type: 'History' },
+                    { name: 'Xi’an: Terracotta Army day trip', date: 'Day 4', type: 'Day Trip' },
+                    { name: 'Shanghai: The Bund + French Concession', date: 'Days 5–6', type: 'City' },
+                    { name: 'Food focus: regional specialties each city', date: 'Any day', type: 'Food' },
                 ],
             };
         }
@@ -538,13 +772,21 @@ export class EventHorizon {
         durationDays: number;
         dates: any;
         flights: any;
+        hotels: any;
+        transport: any;
         activities: any;
     }): string {
-        const { goal, destination, durationDays, dates, flights, activities } = params;
+        const { goal, destination, durationDays, dates, flights, hotels, transport, activities } = params;
         const flight = flights?.options?.[flights?.recommendedIndex ?? 0] ?? flights?.options?.[0];
         const flightLine = flight
             ? `- ${flight.route ? `${flight.route} • ` : ''}${flight.airline} ${flight.flight}${flight.time ? ` • ${flight.time}` : ''} • ${flight.duration} • ${flight.price}`
             : '- Add flights';
+        const hotel = hotels?.options?.[hotels?.recommendedIndex ?? 0] ?? hotels?.options?.[0];
+        const hotelLine = hotel
+            ? `- ${hotel.name}${hotel.area ? ` • ${hotel.area}` : ''} • ~$${hotel.nightlyUsd}/night`
+            : '- Choose accommodations';
+        const transportLines: string[] =
+            transport?.options?.slice(0, 4).map((o: any) => `- ${o.name}: ${o.details}`) ?? ['- Add local transport plan'];
         const activityLines: string[] =
             activities?.items?.slice(0, 6).map((a: any) => `- ${a.name}`) ?? ['- Add activities'];
 
@@ -572,6 +814,12 @@ export class EventHorizon {
             `## Flights (Recommended)`,
             flightLine,
             ``,
+            `## Accommodation`,
+            hotelLine,
+            ``,
+            `## Getting Around`,
+            ...transportLines,
+            ``,
             `## Must‑See & Activities`,
             ...activityLines,
             ``,
@@ -597,9 +845,34 @@ export class EventHorizon {
         if (name.startsWith('wait:')) return { output: null };
 
         const agent = this.normalizeAgentName(args.assignedAgent);
+        const place = this.inferPlaceFromStep(args.stepName, args.destination);
+        const isFinalItineraryStep =
+            args.stepName.trim().toLowerCase() === 'send final itinerary' || name.includes('final itinerary');
+
         const wantsItinerary = ['itinerary', 'schedule', 'day-by-day', 'day by day'].some(k => name.includes(k));
+        const isDraftItineraryStep = wantsItinerary && !isFinalItineraryStep;
         const wantsFlights = ['flight', 'airfare', 'plane'].some(k => name.includes(k));
         const wantsDates = ['date', 'dates', 'when'].some(k => name.includes(k));
+        const wantsHotels = ['hotel', 'hotels', 'accommod', 'lodging', 'stay', 'hostel', 'airbnb', 'apartment'].some(k =>
+            name.includes(k)
+        );
+        const wantsTransport = [
+            'transport',
+            'transportation',
+            'transit',
+            'metro',
+            'subway',
+            'mrt',
+            'bus',
+            'train',
+            'rideshare',
+            'ride-share',
+            'uber',
+            'lyft',
+            'taxi',
+            'car rental',
+            'rental car',
+        ].some(k => name.includes(k));
         const wantsActivities = ['activity', 'activities', 'must-see', 'things to do', 'places', 'sights'].some(k =>
             name.includes(k)
         );
@@ -611,36 +884,47 @@ export class EventHorizon {
 
         // If a Research step mentions "itinerary", prefer activities/scenarios output over a full itinerary.
         if (agent === 'ResearchAgent' && wantsItinerary) {
-            const activities = args.context.activities ?? this.buildActivitiesOutput(args.destination);
+            const activities = args.context.activities ?? this.buildActivitiesOutput(place);
             if (!args.context.activities) contextPatch.activities = activities;
             return { output: activities, contextPatch };
         }
 
-        if (wantsItinerary) {
+        // Hide intermediate "draft" itinerary creation; only the final step should emit the itinerary.
+        if (isDraftItineraryStep) {
+            return { output: undefined };
+        }
+
+        if (wantsItinerary && isFinalItineraryStep) {
             const dates = args.context.dates ?? (await this.buildDatesOutputWithPriceInsights({
                 goal: args.goal,
                 durationDays: args.durationDays,
                 destination: args.destination,
             }));
-            const flights = args.context.flights ?? this.buildFlightsOutput(args.destination);
-            const activities = args.context.activities ?? this.buildActivitiesOutput(args.destination);
+            const flights = args.context.flights ?? this.buildFlightsOutput(place);
+            const hotels = args.context.hotels ?? this.buildHotelsOutput(place, args.durationDays);
+            const transport = args.context.transport ?? this.buildTransportOutput(place, args.stepName);
+            const activities = args.context.activities ?? this.buildActivitiesOutput(place);
             if (!args.context.dates) contextPatch.dates = dates;
             if (!args.context.flights) contextPatch.flights = flights;
+            if (!args.context.hotels) contextPatch.hotels = hotels;
+            if (!args.context.transport) contextPatch.transport = transport;
             if (!args.context.activities) contextPatch.activities = activities;
 
             const itineraryMarkdown = this.buildItineraryMarkdown({
                 goal: args.goal,
-                destination: args.destination,
+                destination: place,
                 durationDays: args.durationDays,
                 dates,
                 flights,
+                hotels,
+                transport,
                 activities,
             });
             contextPatch.itineraryMarkdown = itineraryMarkdown;
             return { output: { type: 'markdown', itineraryMarkdown }, contextPatch };
         }
 
-        if (wantsDates || agent === 'Planner') {
+        if (wantsDates || (agent === 'Planner' && !args.context.dates)) {
             const dates = await this.buildDatesOutputWithPriceInsights({
                 goal: args.goal,
                 durationDays: args.durationDays,
@@ -650,19 +934,31 @@ export class EventHorizon {
             return { output: dates, contextPatch };
         }
 
-        if (wantsFlights || agent === 'LogisticsAgent') {
-            const flights = this.buildFlightsOutput(args.destination);
+        if (wantsHotels || (agent === 'LogisticsAgent' && !args.context.hotels && wantsHotels)) {
+            const hotels = this.buildHotelsOutput(place, args.durationDays);
+            contextPatch.hotels = hotels;
+            return { output: hotels, contextPatch };
+        }
+
+        if (wantsTransport || (agent === 'LogisticsAgent' && !args.context.transport && wantsTransport)) {
+            const transport = this.buildTransportOutput(place, args.stepName);
+            contextPatch.transport = transport;
+            return { output: transport, contextPatch };
+        }
+
+        if (wantsFlights || (agent === 'LogisticsAgent' && !args.context.flights && wantsFlights)) {
+            const flights = this.buildFlightsOutput(place);
             contextPatch.flights = flights;
             return { output: flights, contextPatch };
         }
 
-        if (wantsActivities || agent === 'ResearchAgent') {
-            const activities = this.buildActivitiesOutput(args.destination);
+        if (wantsActivities || (agent === 'ResearchAgent' && !args.context.activities)) {
+            const activities = this.buildActivitiesOutput(place);
             contextPatch.activities = activities;
             return { output: activities, contextPatch };
         }
 
-        if (wantsBudget || agent === 'FinancialAgent') {
+        if (wantsBudget || (agent === 'FinancialAgent' && !args.context.budget)) {
             const budget = this.buildBudgetOutput(args.durationDays);
             contextPatch.budget = budget;
             return { output: budget, contextPatch };

@@ -72,6 +72,23 @@ app.get('/api/workflows/:id', async (req, res) => {
     }
 });
 
+// DELETE /api/workflows - Clear recent missions (workflows + steps)
+app.delete('/api/workflows', async (_req, res) => {
+    try {
+        const [stepsResult, workflowsResult] = await Promise.all([
+            Step.deleteMany({}),
+            Workflow.deleteMany({}),
+        ]);
+        res.json({
+            success: true,
+            deletedSteps: stepsResult.deletedCount ?? 0,
+            deletedWorkflows: workflowsResult.deletedCount ?? 0,
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // POST /api/knowledge/seed - Seed a small curated knowledge base (requires OPENAI_API_KEY for embeddings)
 app.post('/api/knowledge/seed', async (_req, res) => {
     try {
@@ -170,17 +187,23 @@ app.post('/api/workflows', async (req, res) => {
                     2. Schema: { "name": "Step Name", "agent": "AgentName" }
                     3. Agents: "Planner", "ResearchAgent", "LogisticsAgent", "VisaAgent", "FinancialAgent".
                     4. Do NOT include WAIT steps. The system handles timing automatically.
-                    5. Last step: "Send Final Itinerary" (agent="Planner").
-                    6. Use the provided travel notes when helpful.
+                    5. The ONLY itinerary-writing step is the last step: "Send Final Itinerary" (agent="Planner"). Do NOT include draft/day-by-day itinerary steps.
+                    6. Use these step names/keywords so the UI can render results: Dates, Flights, Accommodation/Hotels, Local Transport, Must-See/Activities, Budget, Visa.
+                    7. Use the provided travel notes when helpful.
 
                     Travel notes (grounding):
                     ${knowledge.map(k => `- (${k.source}) ${k.text}`).join('\n')}
 
                     Example:
                     [
+                        { "name": "Select Dates", "agent": "Planner" },
                         { "name": "Find Flights", "agent": "LogisticsAgent" },
-                        { "name": "WAIT: 5000", "agent": "System" },
-                        { "name": "Book Hotel", "agent": "FinancialAgent" }
+                        { "name": "Suggest Accommodation Options", "agent": "LogisticsAgent" },
+                        { "name": "Plan Local Transportation", "agent": "LogisticsAgent" },
+                        { "name": "Must-See Places & Activities", "agent": "ResearchAgent" },
+                        { "name": "Estimate Budget", "agent": "FinancialAgent" },
+                        { "name": "Check Visa Requirements", "agent": "VisaAgent" },
+                        { "name": "Send Final Itinerary", "agent": "Planner" }
                     ]`
                 },
                 { role: "user", content: prompt }
@@ -189,7 +212,32 @@ app.post('/api/workflows', async (req, res) => {
 
         const rawContent = completion.choices[0].message.content;
         const cleanContent = rawContent?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
-        const stepsData = JSON.parse(cleanContent);
+        const parsed = JSON.parse(cleanContent);
+        const stepsData: Array<{ name: string; agent: string }> = (Array.isArray(parsed) ? parsed : [])
+            .map((s: any) => ({
+                name: String(s?.name ?? '').replace(/\s+/g, ' ').trim(),
+                agent: normalizeAgentName(s?.agent),
+            }))
+            .filter(s => s.name.length > 0);
+
+        const isFinalItineraryStep = (name: string) => {
+            const lower = name.trim().toLowerCase();
+            return lower === 'send final itinerary' || lower.includes('final itinerary');
+        };
+        const isWaitStep = (name: string) => /^wait\b/i.test(name.trim());
+        const isDraftItineraryStep = (step: { name: string; agent: string }) => {
+            if (step.agent !== 'Planner') return false;
+            if (isFinalItineraryStep(step.name)) return false;
+            return /\b(draft|day[- ]by[- ]day|itinerary|schedule)\b/i.test(step.name);
+        };
+
+        const filteredSteps = stepsData.filter(s => !isWaitStep(s.name) && !isDraftItineraryStep(s));
+
+        const finalIndex = filteredSteps.findIndex(s => isFinalItineraryStep(s.name));
+        const finalStep = finalIndex >= 0 ? filteredSteps.splice(finalIndex, 1)[0] : { name: 'Send Final Itinerary', agent: 'Planner' };
+        filteredSteps.push({ name: 'Send Final Itinerary', agent: 'Planner' });
+        // If the model already included a final step, keep it (and its agent) but ensure it's last.
+        filteredSteps[filteredSteps.length - 1] = finalStep;
 
         // Create Workflow
         const wf = await engine.createWorkflow(prompt, [], {
@@ -204,7 +252,7 @@ app.post('/api/workflows', async (req, res) => {
         // For now, mapping back to simple strings for compatibility, will update shortly.
 
         // Temporarily just use names until schema is updated
-        const stepDocs = stepsData.map((s: any, index: number) => ({
+        const stepDocs = filteredSteps.map((s: any, index: number) => ({
             workflowId: wf._id,
             name: s.name,
             assignedAgent: normalizeAgentName(s.agent),
