@@ -39,6 +39,18 @@ export interface IStep extends Document {
     updatedAt: Date;
 }
 
+export interface IKnowledgeChunk extends Document {
+    text: string;
+    source: string;
+    tags: {
+        destination?: string;
+        topic?: string;
+    };
+    embedding?: number[];
+    createdAt: Date;
+    updatedAt: Date;
+}
+
 const WorkflowSchema: Schema = new Schema({
     goal: { type: String, required: true },
     status: { type: String, enum: Object.values(WorkflowStatus), default: WorkflowStatus.PENDING },
@@ -59,5 +71,19 @@ const StepSchema: Schema = new Schema({
     scheduledFor: { type: Date, default: Date.now },
 }, { timestamps: true });
 
+const KnowledgeChunkSchema: Schema = new Schema(
+    {
+        text: { type: String, required: true },
+        source: { type: String, required: true },
+        tags: {
+            destination: { type: String },
+            topic: { type: String },
+        },
+        embedding: [{ type: Number }],
+    },
+    { timestamps: true }
+);
+
 export const Workflow = mongoose.model<IWorkflow>('Workflow', WorkflowSchema);
 export const Step = mongoose.model<IStep>('Step', StepSchema);
+export const KnowledgeChunk = mongoose.model<IKnowledgeChunk>('KnowledgeChunk', KnowledgeChunkSchema, 'knowledge_chunks');

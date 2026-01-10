@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { Workflow, Step, WorkflowStatus, StepStatus } from '../db/schema';
 import { v4 as uuidv4 } from 'uuid';
+import { ensurePriceSamplesTimeSeriesCollection, ensureSyntheticPriceSamples, flightPriceTrendByWeek } from '../db/atlas';
+import { searchKnowledgeVector } from '../db/knowledge';
 
 export class EventHorizon {
     private isRunning: boolean = false;
@@ -12,8 +14,15 @@ export class EventHorizon {
 
         // Connect to DB
         if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is missing');
-        await mongoose.connect(process.env.MONGODB_URI);
+        if (mongoose.connection.readyState !== 1) {
+            await mongoose.connect(process.env.MONGODB_URI);
+        }
         console.log('Connected to MongoDB.');
+        try {
+            await ensurePriceSamplesTimeSeriesCollection();
+        } catch (err) {
+            console.warn('⚠️ price_samples setup failed; continuing without time-series optimizations.', err);
+        }
 
         // RECOVERY: Check for any "RUNNING" workflows that were interrupted
         await this.recoverState();
@@ -139,7 +148,18 @@ export class EventHorizon {
             const destination = this.inferDestination(goal);
             const durationDays = this.inferDurationDays(goal);
 
-            const { output, contextPatch } = this.buildUserFacingOutput({
+            const knowledge = await this.retrieveStepKnowledge({
+                goal,
+                destination,
+                stepName: step.name,
+            });
+            if (knowledge.length > 0) {
+                step.retrievalContext = {
+                    sources: knowledge,
+                };
+            }
+
+            const { output, contextPatch } = await this.buildUserFacingOutput({
                 stepName: step.name,
                 assignedAgent: step.assignedAgent,
                 goal,
@@ -147,6 +167,7 @@ export class EventHorizon {
                 durationDays,
                 context: workflow?.context ?? {},
                 scheduledFor: step.scheduledFor,
+                knowledge,
             });
 
             if (output !== undefined) {
@@ -251,6 +272,19 @@ export class EventHorizon {
             step.logs.push(`Error: ${err.message}`);
             await step.save();
         }
+    }
+
+    private normalizeAgentName(raw: unknown): string {
+        const value = String(raw ?? '').trim();
+        const key = value.toLowerCase().replace(/[^a-z]/g, '');
+        if (!key) return 'System';
+        if (key.includes('planner')) return 'Planner';
+        if (key.includes('research')) return 'ResearchAgent';
+        if (key.includes('logistics')) return 'LogisticsAgent';
+        if (key.includes('visa')) return 'VisaAgent';
+        if (key.includes('financial') || key.includes('finance')) return 'FinancialAgent';
+        if (key.includes('system')) return 'System';
+        return value;
     }
 
     private inferDurationDays(goal: string): number {
@@ -364,6 +398,53 @@ export class EventHorizon {
             startISO: start.toISOString(),
             endISO: end.toISOString(),
             days: durationDays,
+        };
+    }
+
+    private async buildDatesOutputWithPriceInsights(params: { goal: string; durationDays: number; destination: string }) {
+        const { goal, durationDays, destination } = params;
+        const roughStart = this.inferStartDate(goal);
+        const windowStart = new Date(roughStart);
+        windowStart.setDate(1);
+        windowStart.setHours(0, 0, 0, 0);
+
+        const windowEnd = new Date(windowStart);
+        windowEnd.setMonth(windowEnd.getMonth() + 3);
+
+        let trend: Array<{ weekStart: Date; avgPrice: number; minPrice: number; maxPrice: number }> = [];
+        try {
+            await ensureSyntheticPriceSamples({
+                destination,
+                kind: 'flight',
+                start: windowStart,
+                days: 120,
+            });
+            trend = await flightPriceTrendByWeek({ destination, start: windowStart, end: windowEnd });
+        } catch {
+            trend = [];
+        }
+        const bestWeek = trend[0]?.weekStart ? new Date(trend[0].weekStart) : null;
+
+        const start = bestWeek ? this.nextWeekday(bestWeek, 6) : roughStart;
+        const end = new Date(start);
+        end.setDate(end.getDate() + Math.max(3, durationDays) - 1);
+
+        return {
+            type: 'dates',
+            recommendation: this.formatDateRange(start, end),
+            reason:
+                trend.length > 0
+                    ? `Selected the lowest-average flight price week (~$${trend[0].avgPrice}).`
+                    : 'Matches your timeline and keeps weekends for travel.',
+            startISO: start.toISOString(),
+            endISO: end.toISOString(),
+            days: durationDays,
+            priceTrend: trend.map(t => ({
+                weekStartISO: new Date(t.weekStart).toISOString(),
+                avgPrice: t.avgPrice,
+                minPrice: t.minPrice,
+                maxPrice: t.maxPrice,
+            })),
         };
     }
 
@@ -502,7 +583,7 @@ export class EventHorizon {
             .join('\n');
     }
 
-    private buildUserFacingOutput(args: {
+    private async buildUserFacingOutput(args: {
         stepName: string;
         assignedAgent: string;
         goal: string;
@@ -510,10 +591,12 @@ export class EventHorizon {
         durationDays: number;
         context: Record<string, any>;
         scheduledFor: Date;
-    }): { output: any; contextPatch?: Record<string, any> } {
+        knowledge: Array<{ text: string; source: string; score?: number }>;
+    }): Promise<{ output: any; contextPatch?: Record<string, any> }> {
         const name = args.stepName.toLowerCase();
         if (name.startsWith('wait:')) return { output: null };
 
+        const agent = this.normalizeAgentName(args.assignedAgent);
         const wantsItinerary = ['itinerary', 'schedule', 'day-by-day', 'day by day'].some(k => name.includes(k));
         const wantsFlights = ['flight', 'airfare', 'plane'].some(k => name.includes(k));
         const wantsDates = ['date', 'dates', 'when'].some(k => name.includes(k));
@@ -526,8 +609,19 @@ export class EventHorizon {
 
         const contextPatch: Record<string, any> = {};
 
+        // If a Research step mentions "itinerary", prefer activities/scenarios output over a full itinerary.
+        if (agent === 'ResearchAgent' && wantsItinerary) {
+            const activities = args.context.activities ?? this.buildActivitiesOutput(args.destination);
+            if (!args.context.activities) contextPatch.activities = activities;
+            return { output: activities, contextPatch };
+        }
+
         if (wantsItinerary) {
-            const dates = args.context.dates ?? this.buildDatesOutput(args.goal, args.durationDays);
+            const dates = args.context.dates ?? (await this.buildDatesOutputWithPriceInsights({
+                goal: args.goal,
+                durationDays: args.durationDays,
+                destination: args.destination,
+            }));
             const flights = args.context.flights ?? this.buildFlightsOutput(args.destination);
             const activities = args.context.activities ?? this.buildActivitiesOutput(args.destination);
             if (!args.context.dates) contextPatch.dates = dates;
@@ -546,25 +640,29 @@ export class EventHorizon {
             return { output: { type: 'markdown', itineraryMarkdown }, contextPatch };
         }
 
-        if (wantsDates || args.assignedAgent === 'Planner') {
-            const dates = this.buildDatesOutput(args.goal, args.durationDays);
+        if (wantsDates || agent === 'Planner') {
+            const dates = await this.buildDatesOutputWithPriceInsights({
+                goal: args.goal,
+                durationDays: args.durationDays,
+                destination: args.destination,
+            });
             contextPatch.dates = dates;
             return { output: dates, contextPatch };
         }
 
-        if (wantsFlights || args.assignedAgent === 'LogisticsAgent') {
+        if (wantsFlights || agent === 'LogisticsAgent') {
             const flights = this.buildFlightsOutput(args.destination);
             contextPatch.flights = flights;
             return { output: flights, contextPatch };
         }
 
-        if (wantsActivities || args.assignedAgent === 'ResearchAgent') {
+        if (wantsActivities || agent === 'ResearchAgent') {
             const activities = this.buildActivitiesOutput(args.destination);
             contextPatch.activities = activities;
             return { output: activities, contextPatch };
         }
 
-        if (wantsBudget || args.assignedAgent === 'FinancialAgent') {
+        if (wantsBudget || agent === 'FinancialAgent') {
             const budget = this.buildBudgetOutput(args.durationDays);
             contextPatch.budget = budget;
             return { output: budget, contextPatch };
@@ -584,7 +682,7 @@ export class EventHorizon {
             };
         }
 
-        if (wantsVisa || args.assignedAgent === 'VisaAgent') {
+        if (wantsVisa || agent === 'VisaAgent') {
             const markdown = [
                 `## Visa & Entry Checklist`,
                 `- Confirm passport validity (6+ months remaining)`,
@@ -599,9 +697,22 @@ export class EventHorizon {
         return { output: undefined };
     }
 
+    private async retrieveStepKnowledge(params: { goal: string; destination: string; stepName: string }) {
+        try {
+            const query = `${params.goal}\n${params.stepName}`;
+            return await searchKnowledgeVector({
+                query,
+                destination: params.destination,
+                limit: 4,
+            });
+        } catch {
+            return [];
+        }
+    }
+
     // Helper to submit a new workflow
-    async createWorkflow(goal: string, steps: string[]) {
-        const wf = await Workflow.create({ goal, key: uuidv4() });
+    async createWorkflow(goal: string, steps: string[], context?: Record<string, any>) {
+        const wf = await Workflow.create({ goal, key: uuidv4(), context: context ?? {} });
         const stepDocs = steps.map(s => ({
             workflowId: wf._id,
             name: s,

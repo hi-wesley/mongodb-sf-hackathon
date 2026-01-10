@@ -1,25 +1,20 @@
-# Winter Week in Japan ❄️ (Winter 2026)
+# 7-Day China Highlights: Beijing → Xi'an → Shanghai (2026)
 
-A beautiful 7-day itinerary focusing on Tokyo, Hakone, and Kyoto with a restful onsen day and plenty of winter highlights.
+Flights ✈️
+- International arrival: Fly into Beijing Capital International Airport (PEK) OR Shanghai Pudong International Airport (PVG). Best flow is to enter Beijing and depart from Shanghai to home.
+- Domestic legs: Beijing ⇄ Xi'an by high-speed rail (roughly 4.5–6 hours) or short flight (about 1.5 hours); Xi'an ⇄ Shanghai by flight (about 2.5 hours) or high-speed rail (6–8 hours).
+- Quick tip: book trains/flights early and check visa/entry requirements for 2026.
 
-## Flights ✈️
-- International: Round-trip to Tokyo (Haneda HND or Narita NRT) from your home city. Major nonstop options from US West Coast (LAX/SFO), East Coast (JFK/EWR), and other hubs with ANA, JAL, United, Delta. Typical long-haul durations vary by origin (roughly 10–12h from the West Coast; longer from the East Coast with connections).
-- Domestic rails: Shinkansen Tokyo ⇄ Kyoto in about 2h 15m (Nozomi/Hikari services). Optional Hakone loop from Tokyo via Odakyu Romancecar for a scenic hot spring break.
-- Tips: For a 7-day rail-centric plan, a single city pass or regional JR passes can be evaluated, but many travelers prefer point-to-point Shinkansen tickets for flexibility.
+Accommodation 🏨
+- Beijing (3 nights): Central stay in Dongcheng, near Wangfujing.
+- Xi'an (2 nights): Near Bell Tower / Muslim Quarter.
+- Shanghai (2 nights): Bund or Lujiazui for easy sightseeing.
 
-## Accommodation 🛌
-- Tokyo (3 nights): Central stay in Shinjuku or Shibuya for easy food and transit access.
-- Hakone (1 night): Traditional ryokan with onsen to recharge.
-- Kyoto (2 nights): Stay in Gion or Kawaramachi for easy temple access and atmosphere.
-- Tokyo (1 night, departure): Near Tokyo Station or airport transfer hub for smooth return travel.
-
-## Activities 🗺️
-- Day 1: Arrive Tokyo. Check-in, stroll Shinjuku or Shibuya, dinner at an izakaya.
-- Day 2: Tokyo highlights: Senso-ji in Asakusa, Tokyo Skytree or Tokyo Tower, Meiji Jingu, Harajuku, Shibuya Crossing at sunset.
-- Day 3: Imperial Palace East Garden, Ginza shopping, afternoon winter illuminations (optional) around Roppongi Hills or Tokyo Midtown.
-- Day 4: Hakone day trip: Hakone Shrine, Lake Ashi cruise, Owakudani Valley, onsen evening at your ryokan.
-- Day 5: Travel to Kyoto by Shinkansen (~2h 15m); check-in in Kyoto; evening stroll through Gion and Pontocho.
-- Day 6: Kyoto temple classics: Fushimi Inari Taisha (thousands of torii gates), Kinkaku-ji (Golden Pavilion), Arashiyama (Bamboo Grove) and Tenryu-ji; optional tea ceremony.
-- Day 7: Morning in Kyoto or Nippon Market visit, transfer back to Tokyo for departure. Last-minute shopping or a quick visit to Tokyo Station area before heading home.
-
-If you’d like, I can tailor this to your exact origin city, travel dates in winter 2026, and preferred pace (more time in Tokyo vs. more time in Kyoto), and add exact hotel options with price ranges.
+Activities 🗺️
+- Day 1 (Beijing): Arrive, check-in, stroll Wangfujing snacks, evening city views.
+- Day 2 (Beijing): Forbidden City ⛩️, Tiananmen Square, Jingshan Park, Hutong bike ride.
+- Day 3 (Beijing): Great Wall day trip (Mutianyu or Jinshanling); optional Summer Palace.
+- Day 4 (Beijing → Xi'an): Travel to Xi'an; Terracotta Army 🗿; Xi'an City Wall bike ride at sunset.
+- Day 5 (Xi'an): Shaanxi History Museum 🏺; Small Wild Goose Pagoda; Muslim Quarter & Great Mosque.
+- Day 6 (Xi'an → Shanghai): Fly to Shanghai; The Bund sunset; Nanjing Road stroll.
+- Day 7 (Shanghai): Yu Garden & Old City, Pudong skyline views 🏙️, Jade Buddha Temple or Zhujiajiao water town excursion; depart.

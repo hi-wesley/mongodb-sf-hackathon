@@ -155,7 +155,7 @@ function App() {
       <div className="w-64 border-r border-gray-800 p-4 flex flex-col bg-horizon-card/50">
         <div className="flex items-center gap-2 mb-8 text-horizon-accent font-bold text-xl">
           <Globe className="w-6 h-6 animate-pulse-slow" />
-          <span>Event Horizon</span>
+          <span>AI Plan My Trip Now</span>
         </div>
 
         <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3 tracking-wider">Recent Missions</h3>

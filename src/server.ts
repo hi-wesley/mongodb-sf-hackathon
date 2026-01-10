@@ -5,8 +5,22 @@ import dotenv from 'dotenv';
 import { EventHorizon } from './core/engine';
 import { Workflow, Step, StepStatus } from './db/schema';
 import { OpenAI } from 'openai';
+import { searchKnowledgeVector, seedKnowledgeChunks } from './db/knowledge';
 
 dotenv.config();
+
+function normalizeAgentName(raw: unknown): string {
+    const value = String(raw ?? '').trim();
+    const key = value.toLowerCase().replace(/[^a-z]/g, '');
+    if (!key) return 'System';
+    if (key.includes('planner')) return 'Planner';
+    if (key.includes('research')) return 'ResearchAgent';
+    if (key.includes('logistics')) return 'LogisticsAgent';
+    if (key.includes('visa')) return 'VisaAgent';
+    if (key.includes('financial') || key.includes('finance')) return 'FinancialAgent';
+    if (key.includes('system')) return 'System';
+    return value;
+}
 
 const app = express();
 app.use(cors());
@@ -58,6 +72,75 @@ app.get('/api/workflows/:id', async (req, res) => {
     }
 });
 
+// POST /api/knowledge/seed - Seed a small curated knowledge base (requires OPENAI_API_KEY for embeddings)
+app.post('/api/knowledge/seed', async (_req, res) => {
+    try {
+        const count = await seedKnowledgeChunks();
+        res.json({ success: true, inserted: count });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/knowledge/search?q=...&destination=...
+app.get('/api/knowledge/search', async (req, res) => {
+    try {
+        const q = String(req.query.q || '').trim();
+        if (!q) return res.status(400).json({ error: 'q is required' });
+        const destination = req.query.destination ? String(req.query.destination) : undefined;
+        const results = await searchKnowledgeVector({ query: q, destination, limit: 6 });
+        res.json({ results });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/prices/trend?destination=... (requires existing samples; engine will auto-seed synthetic samples when generating dates)
+app.get('/api/prices/trend', async (req, res) => {
+    try {
+        const destination = String(req.query.destination || '').trim();
+        if (!destination) return res.status(400).json({ error: 'destination is required' });
+        const db = mongoose.connection.db;
+        if (!db) return res.status(500).json({ error: 'MongoDB is not connected' });
+
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setMonth(end.getMonth() + 3);
+
+        const trend = await db
+            .collection('price_samples')
+            .aggregate([
+                {
+                    $match: {
+                        ts: { $gte: start, $lt: end },
+                        'meta.kind': 'flight',
+                        'meta.destination': destination,
+                    },
+                },
+                {
+                    $group: {
+                        _id: { $dateTrunc: { date: '$ts', unit: 'week' } },
+                        avgPrice: { $avg: '$price' },
+                    },
+                },
+                { $sort: { _id: 1 } },
+                {
+                    $project: {
+                        _id: 0,
+                        weekStart: '$_id',
+                        avgPrice: { $round: ['$avgPrice', 0] },
+                    },
+                },
+            ])
+            .toArray();
+
+        res.json({ destination, trend });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // POST /api/workflows - Create a new dynamic workflow
 app.post('/api/workflows', async (req, res) => {
     const { prompt } = req.body;
@@ -66,6 +149,13 @@ app.post('/api/workflows', async (req, res) => {
     console.log(`🧠 API Request: Plan workflow for "${prompt}"`);
 
     try {
+        const destinationGuess = prompt.match(/\bto\s+([^,.]+?)(?:\s+for\b|\s+in\b|\s*$)/i)?.[1]?.trim();
+        const knowledge = await searchKnowledgeVector({
+            query: prompt,
+            destination: destinationGuess,
+            limit: 6,
+        }).catch(() => []);
+
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         const completion = await openai.chat.completions.create({
             model: "gpt-5-nano",
@@ -81,7 +171,11 @@ app.post('/api/workflows', async (req, res) => {
                     3. Agents: "Planner", "ResearchAgent", "LogisticsAgent", "VisaAgent", "FinancialAgent".
                     4. Do NOT include WAIT steps. The system handles timing automatically.
                     5. Last step: "Send Final Itinerary" (agent="Planner").
-                    
+                    6. Use the provided travel notes when helpful.
+
+                    Travel notes (grounding):
+                    ${knowledge.map(k => `- (${k.source}) ${k.text}`).join('\n')}
+
                     Example:
                     [
                         { "name": "Find Flights", "agent": "LogisticsAgent" },
@@ -98,7 +192,10 @@ app.post('/api/workflows', async (req, res) => {
         const stepsData = JSON.parse(cleanContent);
 
         // Create Workflow
-        const wf = await engine.createWorkflow(prompt, []); // engine.createWorkflow expects just strings? We need to update it or manually insert.
+        const wf = await engine.createWorkflow(prompt, [], {
+            destination: destinationGuess,
+            knowledge: knowledge.map(k => ({ source: k.source, text: k.text, score: k.score })),
+        });
         // Let's manually insert to support attributes like 'assignedAgent' which we will add to schema.
 
         // Wait, schema update is next task. For now, we will store agent name in local variable 
@@ -110,7 +207,7 @@ app.post('/api/workflows', async (req, res) => {
         const stepDocs = stepsData.map((s: any, index: number) => ({
             workflowId: wf._id,
             name: s.name,
-            assignedAgent: s.agent || 'System',
+            assignedAgent: normalizeAgentName(s.agent),
             status: index === 0 ? StepStatus.PENDING : StepStatus.BLOCKED,
             scheduledFor: new Date()
         }));
@@ -127,9 +224,21 @@ app.post('/api/workflows', async (req, res) => {
     }
 });
 
-// Start Server
-app.listen(port, () => {
-    console.log(`🚀 API Server running on port ${port}`);
-    // Start Engine Loop non-blocking
-    startEngine();
+async function main() {
+    if (!process.env.MONGODB_URI) {
+        console.warn('MONGODB_URI is missing; API will fail until it is set.');
+    } else if (mongoose.connection.readyState !== 1) {
+        await mongoose.connect(process.env.MONGODB_URI);
+    }
+
+    app.listen(port, () => {
+        console.log(`🚀 API Server running on port ${port}`);
+        // Start Engine Loop non-blocking
+        startEngine();
+    });
+}
+
+main().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
 });
