@@ -11,6 +11,7 @@ interface Step {
   assignedAgent: string;
   scheduledFor: string;
   logs: string[];
+  output?: any;
 }
 
 interface Workflow {
@@ -98,8 +99,8 @@ function App() {
               key={wf._id}
               onClick={() => setActiveId(wf._id)}
               className={`w-full text-left p-3 rounded-lg text-sm transition-all ${activeId === wf._id
-                  ? 'bg-horizon-accent/10 border border-horizon-accent/30 text-white'
-                  : 'hover:bg-gray-800 text-gray-400'
+                ? 'bg-horizon-accent/10 border border-horizon-accent/30 text-white'
+                : 'hover:bg-gray-800 text-gray-400'
                 }`}
             >
               <div className="truncate font-medium">{wf.goal}</div>
@@ -157,8 +158,8 @@ function App() {
 
                 <div className="flex items-center gap-4">
                   <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-2xl shadow-xl transition-all duration-500 ${activeAgent !== 'System'
-                      ? 'bg-gradient-to-tr from-blue-600 to-cyan-400 shadow-blue-500/30 scale-110'
-                      : 'bg-gray-800 text-gray-600'
+                    ? 'bg-gradient-to-tr from-blue-600 to-cyan-400 shadow-blue-500/30 scale-110'
+                    : 'bg-gray-800 text-gray-600'
                     }`}>
                     {activeAgent === 'System' ? '🤖' : '🕵️'}
                   </div>
@@ -181,7 +182,7 @@ function App() {
                 <div className="mt-6 p-4 bg-black/40 rounded-xl border border-gray-800 font-mono text-xs text-green-400 min-h-[100px]">
                   <div className="opacity-50 mb-2">// Agent Logs</div>
                   {activeStep?.logs.slice(-3).map((log, i) => (
-                    <div key={i} className="mb-1">> {log}</div>
+                    <div key={i} className="mb-1">{'>'} {log}</div>
                   ))}
                   {activeStep && <span className="animate-pulse">_</span>}
                 </div>
@@ -213,13 +214,13 @@ function App() {
                         >
                           {/* Timeline Dot */}
                           <div className={`absolute -left-[9px] top-0 w-[18px] h-[18px] rounded-full border-4 transition-colors ${isRunning ? 'border-blue-500 bg-black animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.5)]' :
-                              isDone ? 'border-green-500 bg-green-500' :
-                                'border-gray-700 bg-gray-900'
+                            isDone ? 'border-green-500 bg-green-500' :
+                              'border-gray-700 bg-gray-900'
                             }`}></div>
 
                           <div className={`p-4 rounded-xl border transition-all ${isRunning
-                              ? 'bg-horizon-accent/5 border-horizon-accent/30 shadow-lg'
-                              : 'bg-gray-800/30 border-gray-800'
+                            ? 'bg-horizon-accent/5 border-horizon-accent/30 shadow-lg'
+                            : 'bg-gray-800/30 border-gray-800'
                             } ${isFuture ? 'opacity-50 grayscale' : ''}`}>
 
                             <div className="flex justify-between items-start mb-2">
@@ -235,6 +236,60 @@ function App() {
                               <div className="flex items-center gap-2 text-yellow-500 text-sm mt-2">
                                 <Clock className="w-4 h-4 animate-spin-slow" />
                                 <span>Waiting for schedule...</span>
+                              </div>
+                            )}
+
+                            {/* RICH OUTPUT DISPLAY */}
+                            {step.output && (
+                              <div className="mt-4 bg-black/50 rounded-lg p-3 border border-gray-700/50">
+                                {step.output.type === 'weather' && (
+                                  <div className="flex gap-4 overflow-x-auto">
+                                    {step.output.forecast.map((day: any, i: number) => (
+                                      <div key={i} className="flex flex-col items-center min-w-[80px] p-2 bg-gray-800 rounded">
+                                        <span className="text-xs text-gray-400">{day.date}</span>
+                                        {day.condition.includes('Sun') ? <div className="text-yellow-400 text-2xl">☀️</div> :
+                                          day.condition.includes('Cloud') ? <div className="text-gray-400 text-2xl">☁️</div> :
+                                            <div className="text-blue-400 text-2xl">🌧️</div>}
+                                        <span className="font-bold">{day.temp}°F</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {step.output.type === 'flights' && (
+                                  <div className="space-y-2">
+                                    {step.output.options.map((flight: any, i: number) => (
+                                      <div key={i} className="flex justify-between items-center text-sm p-2 bg-gray-800 rounded border border-gray-700">
+                                        <div className="flex flex-col">
+                                          <span className="font-bold text-white">{flight.airline}</span>
+                                          <span className="text-xs text-gray-400">{flight.flight}</span>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className="font-bold text-green-400">{flight.price}</div>
+                                          <div className="text-xs text-gray-500">{flight.duration}</div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {step.output.type === 'events' && (
+                                  <div className="space-y-1">
+                                    {step.output.items.map((event: any, i: number) => (
+                                      <div key={i} className="flex items-center gap-2 text-sm text-gray-300">
+                                        <span className="text-horizon-accent">•</span>
+                                        <span>{event.name}</span>
+                                        <span className="text-xs text-gray-500">({event.date})</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {step.output.type === 'dates' && (
+                                  <div className="text-sm p-2 bg-green-500/10 border border-green-500/30 rounded text-green-300">
+                                    📅 <strong>Recommendation:</strong> {step.output.recommendation}
+                                  </div>
+                                )}
                               </div>
                             )}
 

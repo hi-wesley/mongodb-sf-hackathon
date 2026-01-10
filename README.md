@@ -58,6 +58,25 @@ Open **http://localhost:5173** in your browser.
     *   **LogisticsAgent** books the rocket.
     *   **VisaAgent** goes to sleep for "5 years" (simulated as seconds).
     *   **ResearchAgent** refines search queries (visualized in logs).
+
+## 🚀 Run the Full Demo
+
+You need **two terminal windows** open to run the full experience.
+
+### Terminal 1: The Brain (Backend)
+Start the API server to handle logic, AI planning, and state recovery.
+```bash
+npm start
+```
+*Runs on http://localhost:3000*
+
+### Terminal 2: The Visuals (Frontend)
+Start the dashboard to see the agents in action.
+```bash
+cd client && npm run dev
+```
+*Runs on http://localhost:5173* (Open this link in your browser!)
+
 5.  **Kill the Backend**: Stop the `npm start` process.
 6.  **Restart Backend**: Run `npm start` again.
 7.  **Witness Resurrection**: The dashboard reconnects, and the agent picks up *exactly* where it left off!
