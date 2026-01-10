@@ -1,11 +1,11 @@
 # Event Horizon: The "Forever" Travel Assistant ✈️
 
 > **Problem Statements Addressed:**
-> 1. **Prolonged Coordination**: Agents that "sleep" for months waiting on real-world events.
-> 2. **Multi-Agent Collaboration**: Specialized agents (VisaBot, ResearchAgent) collaborating on tasks.
-> 3. **Adaptive Retrieval**: Visualizing the agent "thinking" and refining queries.
+> 1. **Prolonged Coordination**: Agents that "live forever," sleeping for months waiting on real-world events (visas, dates).
+> 2. **Multi-Agent Collaboration**: Specialized personas (VisaBot, ResearchAgent, FinancialAgent) working together.
+> 3. **Explainable AI**: Visualizing the "thought process" and data retrieval of agents in real-time.
 
-Event Horizon is a resilient, long-running agent engine backed by **MongoDB**. It features a modern **React Dashboard** to visualize agents working, sleeping, and planning in real-time.
+Event Horizon is a **Resilient Agentic Platform** backed by MongoDB. It features a Cybernetic React Dashboard where users can spin up complex travel missions and watch agents collaborate, plan, and execute tasks over simulated logic.
 
 ## 🌟 Key Features
 

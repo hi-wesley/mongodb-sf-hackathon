@@ -80,11 +80,25 @@ export class EventHorizon {
             // We will define specific "Step Handlers" or just generic logic here.
 
             // Update logs in real-time
+            if (!Array.isArray(step.logs)) step.logs = [];
             step.logs.push(`Started execution at ${new Date().toISOString()}`);
             await step.save();
 
-            // Simulate processing time
-            await new Promise(r => setTimeout(r, 1000));
+            // Stream some "agent thoughts" so the UI reliably shows RUNNING state
+            const isWaitStep = step.name.startsWith('WAIT:');
+            if (!isWaitStep) {
+                const genericThoughts = [
+                    `[${step.assignedAgent}] Assessing requirements...`,
+                    `[${step.assignedAgent}] Querying providers...`,
+                    `[${step.assignedAgent}] Processing results...`,
+                    `[${step.assignedAgent}] Verifying constraints...`,
+                ];
+                for (const t of genericThoughts) {
+                    step.logs.push(t);
+                    await step.save();
+                    await new Promise(r => setTimeout(r, 450));
+                }
+            }
 
             // Check for WAIT instruction (e.g. "WAIT: 5000" means wait 5 seconds)
             if (step.name.startsWith('WAIT:')) {
@@ -105,7 +119,7 @@ export class EventHorizon {
                 // If this step is "Wait 3 days", we find the next step and set its scheduledFor = now + 3 days.
                 const nextStep = await Step.findOne({
                     workflowId: step.workflowId,
-                    status: 'BLOCKED', // It should be blocked
+                    status: StepStatus.BLOCKED, // It should be blocked
                     _id: { $ne: step._id }
                 }).sort({ _id: 1 });
 
@@ -116,65 +130,36 @@ export class EventHorizon {
                 }
             }
 
-            // SIMULATE ADAPTIVE RETRIEVAL / MULTI-AGENT THOUGHTS
-            if (step.assignedAgent === 'ResearchAgent' || step.name.includes('Research')) {
-                const thoughts = [
-                    'Analyzing user intent...',
-                    'Querying internal vector database...',
-                    'Found 12 relevant documents.',
-                    'Refining search: adding spatial constraints...',
-                    'Cross-referencing with live web data...',
-                    'Synthesizing answer from multiple sources.'
-                ];
-                for (const t of thoughts) {
-                    step.logs.push(t);
-                    await step.save();
-                    await new Promise(r => setTimeout(r, 800)); // Delay to show animation in UI
-                }
-            } else if (step.assignedAgent === 'VisaAgent') {
-                step.logs.push('Checking embassy appointment availability...');
-                await step.save();
-                await new Promise(r => setTimeout(r, 1000));
-                step.logs.push('Found slot: March 14th.');
-            }
+            // Specific logs override or append
+            // The specific ResearchAgent and VisaAgent blocks are removed as the generic one covers it for now.
 
-            // GENERATE RICH OUTPUT DATA (Mocking Real APIs)
-            if (step.name.toLowerCase().includes('weather')) {
-                step.output = {
-                    type: 'weather',
-                    location: 'New York',
-                    forecast: [
-                        { date: '2026-05-12', temp: 72, condition: 'Sunny' },
-                        { date: '2026-05-13', temp: 68, condition: 'Partly Cloudy' },
-                        { date: '2026-05-14', temp: 65, condition: 'Rain' }
-                    ]
-                };
-            } else if (step.name.toLowerCase().includes('flight')) {
-                step.output = {
-                    type: 'flights',
-                    options: [
-                        { airline: 'SpaceX', flight: 'SX-882', time: '10:00 AM', price: '$450', duration: '4h 30m' },
-                        { airline: 'Delta', flight: 'DL-249', time: '02:00 PM', price: '$380', duration: '5h 10m' },
-                    ]
-                };
-            } else if (step.name.toLowerCase().includes('event') || step.name.toLowerCase().includes('visit')) {
-                step.output = {
-                    type: 'events',
-                    items: [
-                        { name: 'Met Gala Exhibition', date: 'May 2026', type: 'Art' },
-                        { name: 'Central Park Jazz Fest', date: 'May 15th', type: 'Music' },
-                        { name: 'Empire State Building Tour', date: 'Daily', type: 'Sightseeing' }
-                    ]
-                };
-            } else if (step.name.toLowerCase().includes('date')) {
-                step.output = {
-                    type: 'dates',
-                    recommendation: 'May 12 - May 26, 2026',
-                    reason: 'Optimal weather and scheduled cultural events.'
-                };
+            // GENERATE USER-FACING TRAVEL OUTPUT (Mocking Real APIs)
+            const workflow = await Workflow.findById(step.workflowId);
+            const goal = workflow?.goal ?? '';
+            const destination = this.inferDestination(goal);
+            const durationDays = this.inferDurationDays(goal);
+
+            const { output, contextPatch } = this.buildUserFacingOutput({
+                stepName: step.name,
+                assignedAgent: step.assignedAgent,
+                goal,
+                destination,
+                durationDays,
+                context: workflow?.context ?? {},
+                scheduledFor: step.scheduledFor,
+            });
+
+            if (output !== undefined) {
+                step.output = output;
             }
 
             await step.save();
+
+            if (workflow && contextPatch && Object.keys(contextPatch).length > 0) {
+                workflow.context = { ...(workflow.context ?? {}), ...contextPatch };
+                workflow.markModified('context');
+                await workflow.save();
+            }
 
             // Check for a specific "poison pill" to simulate a crash
             if (step.name.includes('CRASH_ME')) {
@@ -182,7 +167,6 @@ export class EventHorizon {
                 process.exit(1); // Hard crash
             }
 
-            step.output = { result: `Success for ${step.name}`, timestamp: Date.now() };
             step.status = StepStatus.COMPLETED;
             step.logs.push(`Completed successfully.`);
             await step.save();
@@ -219,12 +203,25 @@ export class EventHorizon {
                     fs.writeFileSync('final_itinerary.md', content);
                     console.log('📄 Generated custom final_itinerary.md file in project root.');
                     step.logs.push('Generated final_itinerary.md');
+                    const existingOutput =
+                        step.output && typeof step.output === 'object' && !Array.isArray(step.output)
+                            ? step.output
+                            : undefined;
+                    step.output = {
+                        ...(existingOutput ?? {}),
+                        type: 'markdown',
+                        itineraryMarkdown: content,
+                        file: 'final_itinerary.md'
+                    };
+                    await step.save();
 
                     console.log('✅ Workflow complete. Ready for next mission.');
                     // process.exit(0); // Removed to allow continuous operation
 
                 } catch (err) {
                     console.error("Failed to generate itinerary:", err);
+                    step.logs.push('Failed to generate itinerary via OpenAI; showing the template itinerary instead.');
+                    await step.save();
                 }
             }
 
@@ -232,7 +229,7 @@ export class EventHorizon {
             // Use _id for reliable sorting since createdAt might be identical in batch inserts
             const nextStep = await Step.findOne({
                 workflowId: step.workflowId,
-                status: 'BLOCKED',
+                status: StepStatus.BLOCKED,
                 _id: { $ne: step._id }
             }).sort({ _id: 1 });
 
@@ -254,6 +251,352 @@ export class EventHorizon {
             step.logs.push(`Error: ${err.message}`);
             await step.save();
         }
+    }
+
+    private inferDurationDays(goal: string): number {
+        const numeric = goal.match(/\b(\d+)\s*(day|week|month)s?\b/i);
+        if (numeric) {
+            const value = Number(numeric[1]);
+            const unit = numeric[2].toLowerCase();
+            if (!Number.isFinite(value) || value <= 0) return 14;
+            if (unit.startsWith('day')) return value;
+            if (unit.startsWith('week')) return value * 7;
+            if (unit.startsWith('month')) return value * 30;
+        }
+
+        const wordToNumber: Record<string, number> = {
+            one: 1,
+            two: 2,
+            three: 3,
+            four: 4,
+            five: 5,
+            six: 6,
+            seven: 7,
+            eight: 8,
+            nine: 9,
+            ten: 10,
+        };
+        const word = goal.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*(day|week|month)s?\b/i);
+        if (word) {
+            const value = wordToNumber[word[1].toLowerCase()] ?? 14;
+            const unit = word[2].toLowerCase();
+            if (unit.startsWith('day')) return value;
+            if (unit.startsWith('week')) return value * 7;
+            if (unit.startsWith('month')) return value * 30;
+        }
+
+        return 14;
+    }
+
+    private inferDestination(goal: string): string {
+        const normalized = goal.replace(/\s+/g, ' ').trim();
+        const toMatch = normalized.match(/\bto\s+([^,.]+?)(?:\s+for\b|\s+in\b|\s+with\b|\s+on\b|\s*$)/i);
+        if (toMatch?.[1]) return toMatch[1].trim();
+
+        const inMatch = normalized.match(/\bin\s+([^,.]+?)(?:\s+for\b|\s*$)/i);
+        if (inMatch?.[1]) return inMatch[1].trim();
+
+        return 'your destination';
+    }
+
+    private extractMonthYear(goal: string): { monthIndex: number | null; year: number | null } {
+        const months = [
+            'january',
+            'february',
+            'march',
+            'april',
+            'may',
+            'june',
+            'july',
+            'august',
+            'september',
+            'october',
+            'november',
+            'december',
+        ];
+        const lower = goal.toLowerCase();
+        const monthIndex = months.findIndex(m => lower.includes(m));
+        const yearMatch = goal.match(/\b(20\d{2})\b/);
+        const year = yearMatch ? Number(yearMatch[1]) : null;
+        return { monthIndex: monthIndex >= 0 ? monthIndex : null, year };
+    }
+
+    private nextWeekday(from: Date, weekday: number): Date {
+        const result = new Date(from);
+        result.setHours(10, 0, 0, 0);
+        const diff = (weekday - result.getDay() + 7) % 7;
+        result.setDate(result.getDate() + (diff === 0 ? 7 : diff));
+        return result;
+    }
+
+    private inferStartDate(goal: string): Date {
+        const now = new Date();
+        const { monthIndex, year } = this.extractMonthYear(goal);
+        if (monthIndex === null) return this.nextWeekday(now, 6);
+
+        const baseYear = year ?? (monthIndex < now.getMonth() ? now.getFullYear() + 1 : now.getFullYear());
+        return this.nextWeekday(new Date(baseYear, monthIndex, 1), 6);
+    }
+
+    private formatDate(date: Date): string {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    private formatDateRange(start: Date, end: Date): string {
+        const sameYear = start.getFullYear() === end.getFullYear();
+        const startLabel = start.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: sameYear ? undefined : 'numeric',
+        });
+        const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `${startLabel} - ${endLabel}`;
+    }
+
+    private buildDatesOutput(goal: string, durationDays: number) {
+        const start = this.inferStartDate(goal);
+        const end = new Date(start);
+        end.setDate(end.getDate() + Math.max(3, durationDays) - 1);
+        return {
+            type: 'dates',
+            recommendation: this.formatDateRange(start, end),
+            reason: 'Matches your timeline and keeps weekends for travel.',
+            startISO: start.toISOString(),
+            endISO: end.toISOString(),
+            days: durationDays,
+        };
+    }
+
+    private buildFlightsOutput(destination: string) {
+        const lower = destination.toLowerCase();
+        const toAirport =
+            lower.includes('japan') || lower.includes('tokyo')
+                ? 'NRT'
+                : lower.includes('london') || lower.includes('uk') || lower.includes('england')
+                    ? 'LHR'
+                    : lower.includes('paris') || lower.includes('france')
+                        ? 'CDG'
+                        : lower.includes('new york') || lower.includes('nyc')
+                            ? 'JFK'
+                            : 'INTL';
+        return {
+            type: 'flights',
+            options: [
+                {
+                    airline: lower.includes('japan') ? 'ANA' : 'United',
+                    flight: lower.includes('japan') ? 'NH-107' : 'UA-882',
+                    time: '10:10 AM',
+                    route: `SFO → ${toAirport}`,
+                    price: '$1,120',
+                    duration: '11h 40m',
+                },
+                {
+                    airline: lower.includes('japan') ? 'Japan Airlines' : 'Delta',
+                    flight: lower.includes('japan') ? 'JL-001' : 'DL-249',
+                    time: '02:35 PM',
+                    route: `SFO → ${toAirport}`,
+                    price: '$1,060',
+                    duration: '12h 05m',
+                },
+            ],
+            recommendedIndex: 1,
+        };
+    }
+
+    private buildActivitiesOutput(destination: string) {
+        const lower = destination.toLowerCase();
+        if (lower.includes('japan') || lower.includes('tokyo')) {
+            return {
+                type: 'events',
+                items: [
+                    { name: 'Shibuya Crossing & Shinjuku night walk', date: 'Day 1', type: 'City' },
+                    { name: 'Meiji Shrine + Harajuku street food', date: 'Day 2', type: 'Culture' },
+                    { name: 'Tsukiji Outer Market + sushi tasting', date: 'Day 3', type: 'Food' },
+                    { name: 'Day trip: Hakone (onsen + Mt. Fuji views)', date: 'Day 4', type: 'Nature' },
+                    { name: 'Kyoto: Fushimi Inari + Gion evening', date: 'Day 6', type: 'Culture' },
+                    { name: 'Arashiyama bamboo grove + river area', date: 'Day 7', type: 'Nature' },
+                    { name: 'Nara deer park day trip', date: 'Day 8', type: 'Day Trip' },
+                    { name: 'Osaka: Dotonbori + street food crawl', date: 'Day 10', type: 'Food' },
+                ],
+            };
+        }
+
+        return {
+            type: 'events',
+            items: [
+                { name: 'City walking tour (old town + landmarks)', date: 'Day 1', type: 'Sightseeing' },
+                { name: 'Top museum + local neighborhood exploration', date: 'Day 2', type: 'Culture' },
+                { name: 'Food market + signature local dish tasting', date: 'Day 3', type: 'Food' },
+                { name: 'Day trip to nearby nature/heritage site', date: 'Day 4', type: 'Day Trip' },
+                { name: 'Live show / nightlife district', date: 'Day 5', type: 'Entertainment' },
+                { name: 'Shopping + souvenir route', date: 'Day 6', type: 'Shopping' },
+            ],
+        };
+    }
+
+    private buildBudgetOutput(durationDays: number) {
+        const flights = 1100;
+        const hotels = Math.round(durationDays * 170);
+        const foodAndActivities = Math.round(durationDays * 85);
+        const total = flights + hotels + foodAndActivities;
+        const format = (n: number) => `$${n.toLocaleString('en-US')}`;
+        return {
+            type: 'budget',
+            total: format(total),
+            breakdown: [
+                { category: 'Flights', amount: format(flights) },
+                { category: 'Hotels', amount: format(hotels) },
+                { category: 'Food & Activities', amount: format(foodAndActivities) },
+            ],
+        };
+    }
+
+    private buildItineraryMarkdown(params: {
+        goal: string;
+        destination: string;
+        durationDays: number;
+        dates: any;
+        flights: any;
+        activities: any;
+    }): string {
+        const { goal, destination, durationDays, dates, flights, activities } = params;
+        const flight = flights?.options?.[flights?.recommendedIndex ?? 0] ?? flights?.options?.[0];
+        const flightLine = flight
+            ? `- ${flight.route ? `${flight.route} • ` : ''}${flight.airline} ${flight.flight}${flight.time ? ` • ${flight.time}` : ''} • ${flight.duration} • ${flight.price}`
+            : '- Add flights';
+        const activityLines: string[] =
+            activities?.items?.slice(0, 6).map((a: any) => `- ${a.name}`) ?? ['- Add activities'];
+
+        const dayCount = Math.min(Math.max(3, durationDays), 10);
+        const startISO = dates?.startISO;
+        const startDate = startISO ? new Date(startISO) : undefined;
+        const days: string[] = [];
+        for (let i = 0; i < dayCount; i += 1) {
+            const labelDate = startDate ? this.formatDate(new Date(startDate.getTime() + i * 86400000)) : `Day ${i + 1}`;
+            const activity = activities?.items?.[i % (activities?.items?.length ?? 1)]?.name ?? 'Explore the city';
+            days.push(`### Day ${i + 1} (${labelDate})\n- ${activity}\n- Local food stop\n- Evening stroll / downtime`);
+        }
+        const more = durationDays > dayCount ? `\n\n_Repeat this pattern and adjust for rest days for the remaining ${durationDays - dayCount} days._` : '';
+
+        return [
+            `# Trip Plan`,
+            ``,
+            `**Goal:** ${goal}`,
+            `**Destination:** ${destination}`,
+            ``,
+            `## Selected Dates`,
+            `- ${dates?.recommendation ?? 'Choose dates'}`,
+            dates?.reason ? `- ${dates.reason}` : null,
+            ``,
+            `## Flights (Recommended)`,
+            flightLine,
+            ``,
+            `## Must‑See & Activities`,
+            ...activityLines,
+            ``,
+            `## Day‑by‑Day (Starter Itinerary)`,
+            ...days,
+            more,
+        ]
+            .filter(Boolean)
+            .join('\n');
+    }
+
+    private buildUserFacingOutput(args: {
+        stepName: string;
+        assignedAgent: string;
+        goal: string;
+        destination: string;
+        durationDays: number;
+        context: Record<string, any>;
+        scheduledFor: Date;
+    }): { output: any; contextPatch?: Record<string, any> } {
+        const name = args.stepName.toLowerCase();
+        if (name.startsWith('wait:')) return { output: null };
+
+        const wantsItinerary = ['itinerary', 'schedule', 'day-by-day', 'day by day'].some(k => name.includes(k));
+        const wantsFlights = ['flight', 'airfare', 'plane'].some(k => name.includes(k));
+        const wantsDates = ['date', 'dates', 'when'].some(k => name.includes(k));
+        const wantsActivities = ['activity', 'activities', 'must-see', 'things to do', 'places', 'sights'].some(k =>
+            name.includes(k)
+        );
+        const wantsBudget = ['budget', 'cost', 'spend'].some(k => name.includes(k));
+        const wantsWeather = ['weather', 'pack'].some(k => name.includes(k));
+        const wantsVisa = ['visa', 'entry requirement', 'passport'].some(k => name.includes(k));
+
+        const contextPatch: Record<string, any> = {};
+
+        if (wantsItinerary) {
+            const dates = args.context.dates ?? this.buildDatesOutput(args.goal, args.durationDays);
+            const flights = args.context.flights ?? this.buildFlightsOutput(args.destination);
+            const activities = args.context.activities ?? this.buildActivitiesOutput(args.destination);
+            if (!args.context.dates) contextPatch.dates = dates;
+            if (!args.context.flights) contextPatch.flights = flights;
+            if (!args.context.activities) contextPatch.activities = activities;
+
+            const itineraryMarkdown = this.buildItineraryMarkdown({
+                goal: args.goal,
+                destination: args.destination,
+                durationDays: args.durationDays,
+                dates,
+                flights,
+                activities,
+            });
+            contextPatch.itineraryMarkdown = itineraryMarkdown;
+            return { output: { type: 'markdown', itineraryMarkdown }, contextPatch };
+        }
+
+        if (wantsDates || args.assignedAgent === 'Planner') {
+            const dates = this.buildDatesOutput(args.goal, args.durationDays);
+            contextPatch.dates = dates;
+            return { output: dates, contextPatch };
+        }
+
+        if (wantsFlights || args.assignedAgent === 'LogisticsAgent') {
+            const flights = this.buildFlightsOutput(args.destination);
+            contextPatch.flights = flights;
+            return { output: flights, contextPatch };
+        }
+
+        if (wantsActivities || args.assignedAgent === 'ResearchAgent') {
+            const activities = this.buildActivitiesOutput(args.destination);
+            contextPatch.activities = activities;
+            return { output: activities, contextPatch };
+        }
+
+        if (wantsBudget || args.assignedAgent === 'FinancialAgent') {
+            const budget = this.buildBudgetOutput(args.durationDays);
+            contextPatch.budget = budget;
+            return { output: budget, contextPatch };
+        }
+
+        if (wantsWeather) {
+            return {
+                output: {
+                    type: 'weather',
+                    location: args.destination,
+                    forecast: [
+                        { date: 'Day 1', temp: 72, condition: 'Sunny' },
+                        { date: 'Day 2', temp: 68, condition: 'Partly Cloudy' },
+                        { date: 'Day 3', temp: 65, condition: 'Rain' },
+                    ],
+                },
+            };
+        }
+
+        if (wantsVisa || args.assignedAgent === 'VisaAgent') {
+            const markdown = [
+                `## Visa & Entry Checklist`,
+                `- Confirm passport validity (6+ months remaining)`,
+                `- Check entry/visa requirements for ${args.destination}`,
+                `- Prepare return ticket + accommodation proof`,
+                `- Save digital + printed copies of documents`,
+            ].join('\n');
+            return { output: { type: 'markdown', markdown }, contextPatch: { visaChecklist: markdown } };
+        }
+
+        // No user-facing output for this step
+        return { output: undefined };
     }
 
     // Helper to submit a new workflow

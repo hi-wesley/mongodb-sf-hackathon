@@ -44,7 +44,6 @@ async function createDynamicWorkflow() {
                 content: userPrompt
             }
         ],
-        temperature: 0.7,
     });
 
     const rawContent = completion.choices[0].message.content;

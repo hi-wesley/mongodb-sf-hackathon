@@ -75,11 +75,11 @@ app.post('/api/workflows', async (req, res) => {
                     content: `You are an expert agentic planner. 
                     Break down the user request into linear steps.
                     
-                    Rules:
+                     Rules:
                     1. Output ONLY a raw JSON array of objects.
                     2. Schema: { "name": "Step Name", "agent": "AgentName" }
                     3. Agents: "Planner", "ResearchAgent", "LogisticsAgent", "VisaAgent", "FinancialAgent".
-                    4. Include WAIT steps if needed (agent="System").
+                    4. Do NOT include WAIT steps. The system handles timing automatically.
                     5. Last step: "Send Final Itinerary" (agent="Planner").
                     
                     Example:
@@ -91,7 +91,6 @@ app.post('/api/workflows', async (req, res) => {
                 },
                 { role: "user", content: prompt }
             ],
-            temperature: 0.7,
         });
 
         const rawContent = completion.choices[0].message.content;

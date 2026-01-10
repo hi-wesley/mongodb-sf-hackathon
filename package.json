@@ -5,8 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "tsx src/server.ts",
-    "dev": "tsx watch src/server.ts",
-    "test": "jest"
+    "dev": "tsx watch src/server.ts"
   },
   "keywords": [
     "agent",

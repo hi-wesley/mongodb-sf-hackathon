@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plane, Clock, CheckCircle2, AlertCircle, Loader2, User, Globe, FileText, Send } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, Loader2, User, Globe, FileText, Send } from 'lucide-react';
 
 // Types
 interface Step {
@@ -23,12 +23,35 @@ interface Workflow {
 
 const API_URL = 'http://localhost:3000/api';
 
+function renderMarkdownLite(markdown: string) {
+  return markdown
+    .split('\n')
+    .map((rawLine, index) => {
+      const line = rawLine.trimEnd();
+      if (!line.trim()) return <div key={index} className="h-2" />;
+      if (line.startsWith('# ')) return <div key={index} className="text-lg font-bold text-white">{line.slice(2)}</div>;
+      if (line.startsWith('## ')) return <div key={index} className="text-base font-semibold text-white/90">{line.slice(3)}</div>;
+      if (line.startsWith('### ')) return <div key={index} className="text-sm font-semibold text-white/80">{line.slice(4)}</div>;
+      if (line.startsWith('- ')) {
+        return (
+          <div key={index} className="flex gap-2 text-sm text-gray-200">
+            <span className="text-horizon-accent">•</span>
+            <span className="min-w-0 break-words">{line.slice(2)}</span>
+          </div>
+        );
+      }
+      return <div key={index} className="text-sm text-gray-200 break-words">{line}</div>;
+    });
+}
+
 function App() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeWorkflow, setActiveWorkflow] = useState<Workflow | null>(null);
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const focusStepRef = useRef<HTMLDivElement | null>(null);
 
   // Poll for workflow list
   useEffect(() => {
@@ -80,8 +103,51 @@ function App() {
   };
 
   // Derived active agent
-  const activeStep = activeWorkflow?.steps?.find(s => s.status === 'RUNNING');
-  const activeAgent = activeStep?.assignedAgent || 'System';
+  const steps = activeWorkflow?.steps ?? [];
+  const now = Date.now();
+
+  const runningStep = useMemo(() => steps.find(s => s.status === 'RUNNING'), [steps]);
+  const nextPendingStep = useMemo(() => {
+    const pending = steps.filter(s => s.status === 'PENDING');
+    if (pending.length === 0) return undefined;
+    return pending.reduce((earliest, step) => {
+      const earliestTime = new Date(earliest.scheduledFor).getTime();
+      const stepTime = new Date(step.scheduledFor).getTime();
+      if (Number.isNaN(earliestTime)) return step;
+      if (Number.isNaN(stepTime)) return earliest;
+      return stepTime < earliestTime ? step : earliest;
+    });
+  }, [steps]);
+
+  const focusStep = runningStep ?? nextPendingStep;
+  const focusStepId = focusStep?._id;
+
+  const isSleeping =
+    !runningStep &&
+    nextPendingStep &&
+    new Date(nextPendingStep.scheduledFor).getTime() > now;
+
+  const activeAgent = focusStep?.assignedAgent || 'System';
+
+  useEffect(() => {
+    if (!focusStepId) return;
+    focusStepRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusStepId]);
+
+  const focusTitle = runningStep
+    ? 'Running Now'
+    : isSleeping
+      ? 'Sleeping Until Scheduled Time'
+      : nextPendingStep
+        ? 'Queued Next'
+        : 'Idle';
+
+  const focusWhen = (() => {
+    if (!focusStep?.scheduledFor) return null;
+    const t = new Date(focusStep.scheduledFor);
+    if (Number.isNaN(t.getTime())) return null;
+    return t.toLocaleString();
+  })();
 
   return (
     <div className="flex h-screen bg-horizon-bg text-gray-100 font-sans overflow-hidden">
@@ -168,23 +234,33 @@ function App() {
                       {activeAgent}
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      {activeStep ? (
+                      {runningStep ? (
                         <span className="text-green-400 flex items-center gap-1">
                           <Loader2 className="w-3 h-3 animate-spin" /> Processing
                         </span>
                       ) : (
-                        <span className="text-gray-500">Idle</span>
+                        <span className="text-gray-500">{focusTitle}</span>
                       )}
                     </div>
                   </div>
                 </div>
 
+                <div className="mt-4 text-xs text-gray-400 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="uppercase tracking-wider opacity-70">Current Task</span>
+                    {focusWhen && <span className="font-mono text-gray-500">{focusWhen}</span>}
+                  </div>
+                  <div className="text-sm text-white truncate">
+                    {focusStep?.name || '—'}
+                  </div>
+                </div>
+
                 <div className="mt-6 p-4 bg-black/40 rounded-xl border border-gray-800 font-mono text-xs text-green-400 min-h-[100px]">
                   <div className="opacity-50 mb-2">// Agent Logs</div>
-                  {activeStep?.logs.slice(-3).map((log, i) => (
+                  {runningStep?.logs.slice(-3).map((log, i) => (
                     <div key={i} className="mb-1">{'>'} {log}</div>
                   ))}
-                  {activeStep && <span className="animate-pulse">_</span>}
+                  {runningStep && <span className="animate-pulse">_</span>}
                 </div>
               </div>
             </div>
@@ -198,15 +274,28 @@ function App() {
 
                 <div className="space-y-4">
                   <AnimatePresence>
-                    {activeWorkflow.steps?.map((step, index) => {
+                    {activeWorkflow.steps?.map((step) => {
                       const isFuture = step.status === 'BLOCKED';
                       const isRunning = step.status === 'RUNNING';
                       const isDone = step.status === 'COMPLETED';
+                      const isFailed = step.status === 'FAILED';
                       const isWait = step.name.startsWith('WAIT');
+                      const isFocused = step._id === focusStepId;
+                      const output = step.output as any;
+                      const canRenderOutput =
+                        Boolean(output) &&
+                        (output.type === 'weather' ||
+                          output.type === 'flights' ||
+                          output.type === 'events' ||
+                          output.type === 'dates' ||
+                          output.type === 'budget' ||
+                          output.type === 'markdown' ||
+                          Boolean(output.itineraryMarkdown));
 
                       return (
                         <motion.div
                           key={step._id}
+                          ref={isFocused ? focusStepRef : undefined}
                           initial={{ opacity: 0, x: 20 }}
                           animate={{ opacity: 1, x: 0 }}
                           className={`relative pl-8 pb-8 last:pb-0 border-l ${isDone ? 'border-green-500/50' : 'border-gray-800'
@@ -224,9 +313,20 @@ function App() {
                             } ${isFuture ? 'opacity-50 grayscale' : ''}`}>
 
                             <div className="flex justify-between items-start mb-2">
-                              <h3 className={`font-semibold ${isRunning ? 'text-white' : 'text-gray-300'}`}>
-                                {step.name}
-                              </h3>
+                              <div className="flex items-start gap-2 min-w-0">
+                                {isRunning ? (
+                                  <Loader2 className="w-4 h-4 mt-0.5 text-blue-400 animate-spin shrink-0" />
+                                ) : isDone ? (
+                                  <CheckCircle2 className="w-4 h-4 mt-0.5 text-green-500 shrink-0" />
+                                ) : isFailed ? (
+                                  <AlertCircle className="w-4 h-4 mt-0.5 text-red-500 shrink-0" />
+                                ) : (
+                                  <Clock className="w-4 h-4 mt-0.5 text-gray-500 shrink-0" />
+                                )}
+                                <h3 className={`font-semibold truncate ${isRunning ? 'text-white' : 'text-gray-300'}`}>
+                                  {step.name}
+                                </h3>
+                              </div>
                               <div className="text-xs font-mono px-2 py-1 rounded bg-black/20 border border-white/5 text-gray-500">
                                 {step.assignedAgent}
                               </div>
@@ -240,11 +340,11 @@ function App() {
                             )}
 
                             {/* RICH OUTPUT DISPLAY */}
-                            {step.output && (
+                            {canRenderOutput && (
                               <div className="mt-4 bg-black/50 rounded-lg p-3 border border-gray-700/50">
-                                {step.output.type === 'weather' && (
+                                {output.type === 'weather' && (
                                   <div className="flex gap-4 overflow-x-auto">
-                                    {step.output.forecast.map((day: any, i: number) => (
+                                    {output.forecast.map((day: any, i: number) => (
                                       <div key={i} className="flex flex-col items-center min-w-[80px] p-2 bg-gray-800 rounded">
                                         <span className="text-xs text-gray-400">{day.date}</span>
                                         {day.condition.includes('Sun') ? <div className="text-yellow-400 text-2xl">☀️</div> :
@@ -256,13 +356,16 @@ function App() {
                                   </div>
                                 )}
 
-                                {step.output.type === 'flights' && (
+                                {output.type === 'flights' && (
                                   <div className="space-y-2">
-                                    {step.output.options.map((flight: any, i: number) => (
+                                    {output.options.map((flight: any, i: number) => (
                                       <div key={i} className="flex justify-between items-center text-sm p-2 bg-gray-800 rounded border border-gray-700">
                                         <div className="flex flex-col">
                                           <span className="font-bold text-white">{flight.airline}</span>
-                                          <span className="text-xs text-gray-400">{flight.flight}</span>
+                                          <span className="text-xs text-gray-400">
+                                            {flight.flight}
+                                            {flight.time ? ` • ${flight.time}` : ''}
+                                          </span>
                                         </div>
                                         <div className="text-right">
                                           <div className="font-bold text-green-400">{flight.price}</div>
@@ -273,9 +376,9 @@ function App() {
                                   </div>
                                 )}
 
-                                {step.output.type === 'events' && (
+                                {output.type === 'events' && (
                                   <div className="space-y-1">
-                                    {step.output.items.map((event: any, i: number) => (
+                                    {output.items.map((event: any, i: number) => (
                                       <div key={i} className="flex items-center gap-2 text-sm text-gray-300">
                                         <span className="text-horizon-accent">•</span>
                                         <span>{event.name}</span>
@@ -285,9 +388,32 @@ function App() {
                                   </div>
                                 )}
 
-                                {step.output.type === 'dates' && (
-                                  <div className="text-sm p-2 bg-green-500/10 border border-green-500/30 rounded text-green-300">
-                                    📅 <strong>Recommendation:</strong> {step.output.recommendation}
+                                {output.type === 'dates' && (
+                                  <div className="text-sm p-2 bg-green-500/10 border border-green-500/30 rounded text-green-300 space-y-1">
+                                    <div>📅 <strong>Recommendation:</strong> {output.recommendation}</div>
+                                    {output.reason && (
+                                      <div className="text-xs text-green-200/80">{output.reason}</div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {output.type === 'budget' && (
+                                  <div className="space-y-2 text-sm">
+                                    <div className="font-bold text-green-400">Total: {output.total}</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {output.breakdown?.map((b: any, i: number) => (
+                                        <div key={i} className="flex justify-between items-center p-2 bg-gray-800 rounded border border-gray-700">
+                                          <span className="text-gray-300">{b.category}</span>
+                                          <span className="font-mono text-white">{b.amount}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {(output.type === 'markdown' || output.itineraryMarkdown) && (
+                                  <div className="space-y-2">
+                                    {renderMarkdownLite(output.markdown || output.itineraryMarkdown)}
                                   </div>
                                 )}
                               </div>
