@@ -19,9 +19,9 @@ async function seed() {
     // Create a trip workflow
     const steps = [
         'Find Flights',
-        'WAIT: 10000',     // Simulates "Wait 3 months until visa window opens"
+        'WAIT: 1000',      // Simulates "Wait 3 months until visa window opens"
         'Apply for Visa',
-        'WAIT: 5000',      // Simulates "Wait 2 weeks for approval"
+        'WAIT: 1000',      // Simulates "Wait 2 weeks for approval"
         'Book Hotels',
         'Send Final Itinerary'
     ];
