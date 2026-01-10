@@ -1,57 +1,66 @@
 # Event Horizon: The "Forever" Travel Assistant ✈️
 
-> **Problem Statement 1: Prolonged Coordination**
-> An agentic system capable of performing intricate, multi-step workflows that last hours or days... enduring failures, restarts, and task modifications.
+> **Problem Statements Addressed:**
+> 1. **Prolonged Coordination**: Agents that "sleep" for months waiting on real-world events.
+> 2. **Multi-Agent Collaboration**: Specialized agents (VisaBot, ResearchAgent) collaborating on tasks.
+> 3. **Adaptive Retrieval**: Visualizing the agent "thinking" and refining queries.
 
-Event Horizon is a resilient, long-running agent engine backed by **MongoDB**. It is designed to manage tasks that span months (like waiting for visa windows) by "sleeping" and waking up exactly when needed.
+Event Horizon is a resilient, long-running agent engine backed by **MongoDB**. It features a modern **React Dashboard** to visualize agents working, sleeping, and planning in real-time.
 
 ## 🌟 Key Features
 
-*   **Persistence**: Every step (input, output, logs) is saved to MongoDB. The process can crash, be killed, or redeployed, and it will resume exactly where it left off.
-*   **Time Travel Scheduling**: The agent respects `scheduledFor` timestamps. It can "wait 3 months" by going idle and only unlocking the next step when the time arrives.
-*   **Sequential Locking**: Enforces strict step order using a `BLOCKED` / `PENDING` state machine to prevent race conditions.
+*   **Persistence**: Process crashing? No problem. MongoDB stores every thought.
+*   **Time Travel**: Agents respect `scheduledFor` and go dormant until needed.
+*   **Multi-Agent Personas**: Watch "VisaAgent" and "LogisticsAgent" hand off tasks.
+*   **Visual Dashboard**: A cybernetic UI built with Vite + Tailwind + Framer Motion.
+*   **Generative Planning**: Powered by **GPT-5 Nano** for fast, cost-effective workflow generation.
 
-## 🛠️ Setup
+## 🛠️ Stack
 
-1.  **Install Dependencies**
-    ```bash
-    npm install
-    ```
+*   **Runtime**: Node.js + TypeScript
+*   **Database**: MongoDB Atlas (State Store)
+*   **Backend**: Express API (Port 3000)
+*   **Frontend**: React + Vite + Tailwind (Port 5173)
 
-2.  **Configure Environment**
-    Create a `.env` file with your MongoDB Atlas URI:
-    ```bash
-    MONGODB_URI=mongodb+srv://user:pass@cluster...
-    ```
+## 🚀 Getting Started
 
-## 🚀 How to Run the Demo
-
-We have included a `demo.sh` script to make showcasing the resilience easy.
-
-### The "Happy Path"
-Run the full simulation (Find Flights -> Wait -> Apply for Visa -> Wait -> Book Hotels):
-
+### 1. Backend Setup
+Create a `.env` file with your keys:
 ```bash
-./demo.sh
+MONGODB_URI=mongodb+srv://...
+OPENAI_API_KEY=sk-...
 ```
 
-### The "Resilience" Test (Chaos Monkey)
-Prove that the agent survives process death:
+Start the API Server:
+```bash
+# Installs dependencies and starts server on :3000
+npm install
+npm start
+```
+*(Note: `npm start` now runs `npx tsx src/server.ts`)*
 
-1.  Run `./demo.sh`.
-2.  Wait until you see: `🕒 Encountered WAIT instruction. Sleeping...`
-3.  **Kill the process** (`Ctrl + C`).
-4.  Restart the engine manually:
-    ```bash
-    npm start
-    ```
-5.  **Result**: The agent checks MongoDB, sees the wait is still active (or finished), and resumes the workflow without restarting from zero.
+### 2. Frontend Setup
+Launch the Dashboard:
+```bash
+cd client
+npm install
+npm run dev
+```
+Open **http://localhost:5173** in your browser.
 
-## 📂 Project Structure
+## 🎮 How to Demo
 
-*   `src/core/engine.ts`: The heart of the system. Manages the loop, state recovery, and step execution.
-*   `src/db/schema.ts`: Mongoose schemas defining the rigid structure needed for resilience.
-*   `src/travel_workflow.ts`: A script to seed the database with a "Japan Trip" workflow.
+1.  Open the Dashboard.
+2.  Type a request: **"Plan a 2 week trip to Mars in 2050"**.
+3.  Click **Launch**.
+4.  **Watch Magic Happen**:
+    *   **Planner** (GPT-5 Nano) generates the JSON plan.
+    *   **LogisticsAgent** books the rocket.
+    *   **VisaAgent** goes to sleep for "5 years" (simulated as seconds).
+    *   **ResearchAgent** refines search queries (visualized in logs).
+5.  **Kill the Backend**: Stop the `npm start` process.
+6.  **Restart Backend**: Run `npm start` again.
+7.  **Witness Resurrection**: The dashboard reconnects, and the agent picks up *exactly* where it left off!
 
 ---
 *Built for the MongoDB SF Hackathon 2026*

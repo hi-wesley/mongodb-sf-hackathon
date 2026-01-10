@@ -32,6 +32,8 @@ export interface IStep extends Document {
     output: any;
     retryCount: number;
     logs: string[];
+    assignedAgent: string;
+    retrievalContext?: any;
     scheduledFor: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -52,6 +54,8 @@ const StepSchema: Schema = new Schema({
     output: { type: Schema.Types.Mixed },
     retryCount: { type: Number, default: 0 },
     logs: [{ type: String }],
+    assignedAgent: { type: String, default: 'System' },
+    retrievalContext: { type: Schema.Types.Mixed }, // Store vector search results/thoughts here
     scheduledFor: { type: Date, default: Date.now },
 }, { timestamps: true });
 
