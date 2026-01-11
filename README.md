@@ -1,5 +1,7 @@
 # AI Plan My Trip Now
 
+![AI Plan My Trip Now UI](https://i.imgur.com/S59iMfy.png)
+
 > **Problem Statements Addressed:**
 > 1. **Prolonged Coordination**: Agents that "live forever," sleeping for months waiting on real-world events (visas, dates).
 > 2. **Multi-Agent Collaboration**: Specialized personas (VisaBot, ResearchAgent, FinancialAgent) working together.

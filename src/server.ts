@@ -66,6 +66,12 @@ app.get('/api/workflows/:id', async (req, res) => {
         if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
 
         const steps = await Step.find({ workflowId: workflow._id }).sort({ scheduledFor: 1, _id: 1 });
+        await Promise.all(
+            steps.map(async (step) => {
+                if (step.status !== StepStatus.COMPLETED) return;
+                await engine.ensureRenderableOutputForStep(step, workflow);
+            })
+        );
         res.json({ ...workflow.toJSON(), steps });
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch workflow details' });

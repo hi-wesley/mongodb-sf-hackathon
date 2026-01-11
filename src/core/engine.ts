@@ -292,6 +292,52 @@ export class EventHorizon {
         return value;
     }
 
+    async ensureRenderableOutputForStep(step: any, workflow: any) {
+        if (!step || !workflow) return;
+        if (typeof step.name !== 'string') return;
+        if (step.name.trim().toLowerCase().startsWith('wait')) return;
+
+        const existing = step.output;
+        const hasRenderableOutput =
+            existing &&
+            typeof existing === 'object' &&
+            !Array.isArray(existing) &&
+            (typeof existing.type === 'string' || typeof existing.itineraryMarkdown === 'string');
+        if (hasRenderableOutput) return;
+
+        const goal = workflow.goal ?? '';
+        const destination = this.inferDestination(goal);
+        const durationDays = this.inferDurationDays(goal);
+        const knowledge = await this.retrieveStepKnowledge({
+            goal,
+            destination,
+            stepName: step.name,
+        });
+
+        const { output, contextPatch } = await this.buildUserFacingOutput({
+            stepName: step.name,
+            assignedAgent: step.assignedAgent,
+            goal,
+            destination,
+            durationDays,
+            context: workflow?.context ?? {},
+            scheduledFor: step.scheduledFor ?? new Date(),
+            knowledge,
+        });
+
+        if (output !== undefined) {
+            step.output = output;
+            step.markModified('output');
+            await step.save();
+        }
+
+        if (workflow && contextPatch && Object.keys(contextPatch).length > 0) {
+            workflow.context = { ...(workflow.context ?? {}), ...contextPatch };
+            workflow.markModified('context');
+            await workflow.save();
+        }
+    }
+
     private inferDurationDays(goal: string): number {
         const numeric = goal.match(/\b(\d+)\s*(day|week|month)s?\b/i);
         if (numeric) {

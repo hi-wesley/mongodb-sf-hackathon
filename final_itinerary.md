@@ -1,37 +1,27 @@
-# San Francisco Getaway — Final Itinerary
+# Japan 7-Day Itinerary for 2026 🇯🇵
 
-## Flights ✈️
-- Outbound: Your Origin City → San Francisco International (SFO) or Oakland (OAK)
-  - Suggested arrival: Day 1, morning to early afternoon
-  - Ground transfer: BART, rideshare, or taxi to hotel
-- Return: San Francisco → Your Origin City
-  - Suggested departure: Day 4, afternoon or evening
-- Tips: Book in advance to secure best times; consider non-stop options if available.
+A beautiful, balanced week: Tokyo buzz, a serene Hakone onsen, and timeless Kyoto temples.
 
-## Accommodation 🏨
-- Base: 3 nights in central SF (Union Square / SoMa) for easy transit access 🚇
-  - Option A (Boutique + city vibe): 4-star feel near Union Square — great dining and shopping nearby. Est. $260–$320/night
-  - Option B (Waterfront vibes): Fisherman’s Wharf / Embarcadero area — family-friendly, easy bay access. Est. $210–$280/night
-  - Option C (Bay views): Marina District — chic, walkable to parks and bayside. Est. $230–$350/night
-- Check-in: ~3:00 PM; Check-out: ~11:00 AM
-- Pro tip: Stay near transit lines (BART/MUNI) to save time between sights.
+## ✈️ Flights
+- International: Fly into Tokyo (Haneda HND or Narita NRT) from your origin city. Return from Tokyo to home.
+- Domestic transfers:
+  - Tokyo ⇄ Hakone: ~1.5–2 hours by Romancecar/railway; easy day trip or overnight.
+  - Tokyo ⇄ Kyoto: Shinkansen roughly 2h 15m.
+- Tips: Consider arriving a day earlier if possible. Use Suica/PASMO IC cards for easy travel; reserve Shinkansen seats if you’re traveling in peak season.
 
-## Activities 🗺️
-- Day 1: Arrival & Embarcadero
-  - Check-in 🧳, stroll along the Embarcadero
-  - Lunch at Ferry Building Marketplace 🍴
-  - Optional sunset view from Coit Tower or a quick stroll at Pier 39 🌅
-- Day 2: Iconic SF Highlights
-  - Golden Gate Bridge viewpoints (Crissy Field or Battery Spencer) 🏔️
-  - Presidio or Lands End scenic walk 🥾
-  - Classic San Francisco cable car ride 🚋
-- Day 3: Alcatraz & North Beach
-  - Alcatraz Island tour (book in advance) 🛳️
-  - Explore North Beach & Little Italy, Coit Tower 🗼
-  - Ghirardelli Square for dessert by the water 🍫
-- Day 4: Neighborhoods & Departure
-  - Murals & vibes in Mission District, Dolores Park 🌈
-  - Quick lunch at Ferry Building or a Mission burrito 🌯
-  - Depart for the airport ✈️
+## 🏨 Accommodation
+- Tokyo (Nights 1–2): Central hotel in Shibuya or Shinjuku for easy rail access and great dining.
+- Hakone (Nights 3–4): Traditional ryokan with onsen, near Hakone-Yumoto or Gora for tranquil scenery.
+- Kyoto (Nights 5–6): Boutique hotel or ryokan in Gion or Kawaramachi, walkable to key temples and markets.
+- Tokyo (Night 7, optional): Last-night stay near the airport or city center for a smooth departure.
 
-If you share your origin city and travel dates, I can tailor flight times, hotel options, and restaurant ideas to fit your plans perfectly.
+## 🗺️ Activities
+- Day 1 🗼 Arrive in Tokyo. Check-in, then explore Shibuya Crossing, Hachiko statue, and a casual dinner in the area.
+- Day 2 🗻 Tokyo highlights. Senso-ji in Asakusa, Nakamise shopping street, Ueno Park, and a sunset visit to Tokyo Skytree or Tokyo Tower.
+- Day 3 🧭 Hakone journey. Quick train to Hakone, Lake Ashi cruise, Hakone Ropeway to Owakudani, and soak in an onsen at your ryokan.
+- Day 4 🌿 Hakone to Kyoto. Morning onsen or stroll, then Shinkansen to Kyoto. Check-in, wander Nishiki Market, evening in Gion.
+- Day 5 ⛩️ Kyoto classics. Fushimi Inari Taisha with its torii gates, Kiyomizu-dera, stroll through Higashiyama, traditional tea or kaiseki dinner.
+- Day 6 🍃 Kyoto or Nara option. Arashiyama Bamboo Grove, Tenryu-ji, and a peaceful river walk; optional quick visit to Kinkaku-ji (Golden Pavilion).
+- Day 7 🚄 Return to Tokyo & depart. Short morning Shinkansen back to Tokyo for your flight home, or extend one more night in Tokyo if your schedule allows.
+
+If you’d like, I can tailor this with your starting city, exact travel dates in 2026, and preferred pace (more time in Tokyo, fewer temple visits, or a different balance of cities).
