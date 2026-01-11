@@ -2,105 +2,105 @@
 
 ![AI Plan My Trip Now UI](https://i.imgur.com/S59iMfy.png)
 
-> **Problem Statements Addressed:**
-> 1. **Prolonged Coordination**: Agents that "live forever," sleeping for months waiting on real-world events (visas, dates).
-> 2. **Multi-Agent Collaboration**: Specialized personas (VisaBot, ResearchAgent, FinancialAgent) working together.
-> 3. **Explainable AI**: Visualizing the "thought process" and data retrieval of agents in real-time.
+AI Plan My Trip Now is a hackathon MVP that lets you type a trip request, generates a multi‑step plan with multiple agents, and shows user‑facing results (dates, flights, hotels, transport, activities, and a final itinerary) in a dashboard.
 
-AI Plan My Trip Now is a **Resilient Agentic Platform** backed by MongoDB. It features a dashboard where users can spin up complex travel missions and watch agents collaborate, plan, and execute tasks over simulated logic.
+## What’s In This Repo
 
-## 🌟 Key Features
+**Backend (`src/server.ts`)**
+- Express API on `http://localhost:3000`
+- Long‑running workflow engine that persists state to MongoDB (`workflows` + `steps`)
+- LLM planning: `POST /api/workflows` uses OpenAI (`gpt-5-nano`) to produce a list of steps + assigned agents
 
-*   **Persistence**: Process crashing? No problem. MongoDB stores every thought.
-*   **Time Travel**: Agents respect `scheduledFor` and go dormant until needed.
-*   **Multi-Agent Personas**: Watch "VisaAgent" and "LogisticsAgent" hand off tasks.
-*   **Visual Dashboard**: A cybernetic UI built with Vite + Tailwind + Framer Motion.
-*   **Generative Planning**: Powered by **GPT-5 Nano** for fast, cost-effective workflow generation.
+**Frontend (`client/`)**
+- Vite + React + Tailwind dashboard on `http://localhost:5173`
+- Shows “Recent Missions”, current running task, and step outputs
+- Includes a “Clear” button to delete all workflows/steps
 
-## 🛠️ Stack
+## MongoDB Atlas Usage (Meaningful)
 
-*   **Runtime**: Node.js + TypeScript
-*   **Database**: MongoDB Atlas (State Store)
-*   **Backend**: Express API (Port 3000)
-*   **Frontend**: React + Vite + Tailwind (Port 5173)
+This project uses Atlas for more than just persistence:
 
-## 🚀 Getting Started
+1) **Atlas Vector Search** (grounding / “travel notes” retrieval)
+- Collection: `knowledge_chunks`
+- Field: `embedding` (OpenAI embeddings)
+- Endpoint: `GET /api/knowledge/search?q=...&destination=...`
+- Planner (`POST /api/workflows`) pulls relevant notes and injects them into the planning prompt.
 
-### 1. Backend Setup
-Create a `.env` file with your keys:
+2) **Time‑series collection** (price trend → date selection)
+- Collection: `price_samples` (time‑series when privileges allow, regular collection fallback)
+- Used by the engine to pick dates and show a weekly price trend (seeded with synthetic samples if empty).
+
+## Setup
+
+### 1) Environment
+
+Create a `.env` in the repo root:
 ```bash
 MONGODB_URI=mongodb+srv://...
 OPENAI_API_KEY=sk-...
+
+# Optional (defaults shown)
 EMBEDDING_MODEL=text-embedding-3-small
 ATLAS_VECTOR_INDEX=knowledge_embedding
 ```
 
-### 1a. Atlas Setup (Vector Search + Time Series)
+### 2) Install + Run
 
-This MVP uses Atlas in two “meaningful” ways:
-
-- **Atlas Vector Search** on a `knowledge_chunks.embedding` vector field (grounding/citations for planning).
-- **Time-series** `price_samples` collection (date selection based on historical price trend).
-
-**Vector index**
-- Create an Atlas **Vector Search** index named `knowledge_embedding` (or set `ATLAS_VECTOR_INDEX`) on the `knowledge_chunks` collection, field `embedding`.
-- The index dimensions must match your embedding model (for `text-embedding-3-small`, that’s `1536`).
-
-**Seed knowledge**
-- Seed a small curated knowledge base (requires `OPENAI_API_KEY`): `npm run seed:knowledge`
-
-**Time-series collection**
-- The backend auto-creates a `price_samples` time-series collection on startup if it doesn’t exist.
-
-Start the API Server:
+Terminal 1 (backend):
 ```bash
-# Installs dependencies and starts server on :3000
 npm install
 npm start
 ```
-*(Note: `npm start` now runs `npx tsx src/server.ts`)*
 
-### 2. Frontend Setup
-Launch the Dashboard:
+Terminal 2 (frontend):
 ```bash
 cd client
 npm install
 npm run dev
 ```
-Open **http://localhost:5173** in your browser.
 
-## 🎮 How to Demo
+Open `http://localhost:5173`.
 
-1.  Open the Dashboard.
-2.  Type a request: **"Plan a 2 week trip to Mars in 2050"**.
-3.  Click **Launch**.
-4.  **Watch Magic Happen**:
-    *   **Planner** (GPT-5 Nano) generates the JSON plan.
-    *   **LogisticsAgent** books the rocket.
-    *   **VisaAgent** goes to sleep for "5 years" (simulated as seconds).
-    *   **ResearchAgent** refines search queries (visualized in logs).
+## Atlas Setup (Vector Search)
 
-## 🚀 Run the Full Demo
+Create a **Vector Search** index on the `knowledge_chunks` collection (not on `steps` or `workflows`).
 
-You need **two terminal windows** open to run the full experience.
+- Index name: `knowledge_embedding` (or set `ATLAS_VECTOR_INDEX`)
+- Vector field: `embedding`
+- Dimensions: `1536` (for `text-embedding-3-small`)
+- Similarity: `cosine`
 
-### Terminal 1: The Brain (Backend)
-Start the API server to handle logic, AI planning, and state recovery.
-```bash
-npm start
+Example JSON (Atlas UI → JSON editor):
+```json
+{
+  "fields": [
+    {
+      "type": "vector",
+      "path": "embedding",
+      "numDimensions": 1536,
+      "similarity": "cosine"
+    },
+    { "type": "filter", "path": "tags.destination" },
+    { "type": "filter", "path": "tags.topic" }
+  ]
+}
 ```
-*Runs on http://localhost:3000*
 
-### Terminal 2: The Visuals (Frontend)
-Start the dashboard to see the agents in action.
+After the index is ready, seed the knowledge base (requires `OPENAI_API_KEY`):
 ```bash
-cd client && npm run dev
+npm run seed:knowledge
 ```
-*Runs on http://localhost:5173* (Open this link in your browser!)
 
-5.  **Kill the Backend**: Stop the `npm start` process.
-6.  **Restart Backend**: Run `npm start` again.
-7.  **Witness Resurrection**: The dashboard reconnects, and the agent picks up *exactly* where it left off!
+## Demo Tips
+
+- Use the UI to create a mission, then watch each step fill in user‑facing data.
+- Use the sidebar “Clear” button if you want to wipe the mission history.
+- Optional “sleeping agent” demo (creates `WAIT:` steps): `./demo.sh`
+
+## Notes / Limitations
+
+- Flight/hotel/transport/activity results are **mocked** (designed for an MVP UI), while planning + embeddings use OpenAI.
+- Time‑series price data is seeded synthetically when missing (so the “price trend” UI has something to show).
 
 ---
-*Built for the MongoDB SF Hackathon 2026*
+Built for the MongoDB SF Hackathon 2026
